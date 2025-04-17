@@ -9,6 +9,7 @@ TODO: Fix the message synchronization issue using concurrency (Tier 1, item 1).
 
 import socket
 import threading
+import time
 
 HOST = '127.0.0.1'
 PORT = 5000
@@ -60,6 +61,7 @@ def main():
 
         try:
             while running:
+                time.sleep(0.1) # this is to make sure that the ">>" prints in the right place, we might have to improve this in future
                 user_input = input(">> ")
                 wfile.write(user_input + '\n')
                 wfile.flush()
