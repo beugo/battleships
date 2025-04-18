@@ -15,6 +15,7 @@ HOST = '127.0.0.1'
 PORT = 5000
 
 running = True
+printing_ready = threading.Event()
 
 def receive_messages(rfile):
     """Continuously receive and display messages from the server"""
@@ -41,6 +42,9 @@ def receive_messages(rfile):
             else:
                 print(line)
 
+            if line == "Enter coordinate to fire at (e.g. B5):":
+                printing_ready.set()
+
         except Exception as e:
             print(f"[ERROR] Receiver thread: {e}")
             running = False
@@ -61,8 +65,10 @@ def main():
 
         try:
             while running:
-                time.sleep(0.1) # this is to make sure that the ">>" prints in the right place, we might have to improve this in future
+                printing_ready.wait()
                 user_input = input(">> ")
+                printing_ready.clear()
+
                 wfile.write(user_input + '\n')
                 wfile.flush()
 

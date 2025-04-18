@@ -12,7 +12,6 @@ However, if you want to support multiple clients (i.e. progress through further 
 
 import socket
 import threading
-import select
 from battleship import run_single_player_game_online
 
 HOST = '127.0.0.1'
