@@ -8,73 +8,79 @@ TODO: Fix the message synchronization issue using concurrency (Tier 1, item 1).
 """
 
 import socket
+import threading
+import time
 
 HOST = '127.0.0.1'
 PORT = 5000
 
-# HINT: The current problem is that the client is reading from the socket,
-# then waiting for user input, then reading again. This causes server
-# messages to appear out of order.
-#
-# Consider using Python's threading module to separate the concerns:
-# - One thread continuously reads from the socket and displays messages
-# - The main thread handles user input and sends it to the server
-#
-# import threading
+running = True
+
+def receive_messages(rfile):
+    """Continuously receive and display messages from the server"""
+
+    global running
+
+    while running:
+        try:
+            line = rfile.readline()
+            if not line:
+                print("[INFO] Server disconnected.")
+                running = False
+                break
+
+            line = line.strip()
+
+            if line == "GRID":
+                print("\n[Board]")
+                while True:
+                    board_line = rfile.readline()
+                    if not board_line or board_line.strip() == "":
+                        break
+                    print(board_line.strip())
+            else:
+                print(line)
+
+        except Exception as e:
+            print(f"[ERROR] Receiver thread: {e}")
+            running = False
+            break
+
 
 def main():
+
+    global running
+
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.connect((HOST, PORT))
         rfile = s.makefile('r')
         wfile = s.makefile('w')
 
+        receiving_thread = threading.Thread(target=receive_messages, args=(rfile,), daemon=True)
+        receiving_thread.start()
+
         try:
-            while True:
-                # PROBLEM: This design forces the client to alternate between
-                # reading a message and sending input, which doesn't work when
-                # the server sends multiple messages in sequence
-                
-                line = rfile.readline()
-                if not line:
-                    print("[INFO] Server disconnected.")
-                    break
-
-                line = line.strip()
-
-                if line == "GRID":
-                    # Begin reading board lines
-                    print("\n[Board]")
-                    while True:
-                        board_line = rfile.readline()
-                        if not board_line or board_line.strip() == "":
-                            break
-                        print(board_line.strip())
-                else:
-                    # Normal message
-                    print(line)
-
+            while running:
+                time.sleep(0.1) # this is to make sure that the ">>" prints in the right place, we might have to improve this in future
                 user_input = input(">> ")
                 wfile.write(user_input + '\n')
                 wfile.flush()
 
         except KeyboardInterrupt:
             print("\n[INFO] Client exiting.")
+            running = False
 
-# HINT: A better approach would be something like:
-#
-# def receive_messages(rfile):
-#     """Continuously receive and display messages from the server"""
-#     while running:
-#         line = rfile.readline()
-#         if not line:
-#             print("[INFO] Server disconnected.")
-#             break
-#         # Process and display the message
-#
-# def main():
-#     # Set up connection
-#     # Start a thread for receiving messages
-#     # Main thread handles sending user input
+        finally:
+            print("[INFO] Shutting everything down...")
+
+            try:
+                wfile.write("quit\n")
+                wfile.flush()
+            except:
+                pass
+
+            s.close()
+            print("[INFO] Client has shut down nice and gracefully.")
 
 if __name__ == "__main__":
     main()
