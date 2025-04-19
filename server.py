@@ -11,28 +11,47 @@ However, if you want to support multiple clients (i.e. progress through further 
 """
 
 import socket
+import threading
 from battleship import run_single_player_game_online
 
 HOST = '127.0.0.1'
 PORT = 5000
+NUM_PLAYERS = 2
 
-def main():
-    print(f"[INFO] Server listening on {HOST}:{PORT}")
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind((HOST, PORT))
-        s.listen(2)
-        conn, addr = s.accept()
-        print(f"[INFO] Client connected from {addr}")
+def handle_client(conn, addr):
+
+    try:
         with conn:
             rfile = conn.makefile('r')
             wfile = conn.makefile('w')
             run_single_player_game_online(rfile, wfile)
-        print("[INFO] Client disconnected.")
 
-# HINT: For multiple clients, you'd need to:
-# 1. Accept connections in a loop
-# 2. Handle each client in a separate thread
-# 3. Import threading and create a handle_client function
+    except Exception as e:
+        print(f"[ERROR] Unexpected error with client {addr}: {e}")
+
+    finally:
+        print(f"[INFO] Client from address {addr} disconnected.")
+
+def main():
+
+    print(f"[INFO] Server listening on {HOST}:{PORT}")
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind((HOST, PORT))
+        s.listen(2)
+
+        players = []
+
+        while len(players) < NUM_PLAYERS:
+            player = s.accept()
+            players.append(player)
+            print(f"[INFO] Client {len(players)} connected from {player[1]}")
+
+        print(f"[INFO] {NUM_PLAYERS} clients have connected. Starting game...")
+
+        for player in players:
+            client_thread = threading.Thread(target=handle_client, args=(player[0], player[1]))
+            client_thread.start()
 
 if __name__ == "__main__":
     main()
