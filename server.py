@@ -1,57 +1,45 @@
-"""
-server.py
-
-Serves a single-player Battleship session to one connected client.
-Game logic is handled entirely on the server using battleship.py.
-Client sends FIRE commands, and receives game feedback.
-
-TODO: For Tier 1, item 1, you don't need to modify this file much. 
-The core issue is in how the client handles incoming messages.
-However, if you want to support multiple clients (i.e. progress through further Tiers), you'll need concurrency here too.
-"""
-
 import socket
 import threading
-from battleship import run_single_player_game_online
+from battleship import run_two_player_game_online
 
 HOST = '127.0.0.1'
 PORT = 5000
 NUM_PLAYERS = 2
 
-def handle_client(conn, addr):
-
-    try:
-        with conn:
-            rfile = conn.makefile('r')
-            wfile = conn.makefile('w')
-            run_single_player_game_online(rfile, wfile)
-
-    except Exception as e:
-        print(f"[ERROR] Unexpected error with client {addr}: {e}")
-
-    finally:
-        print(f"[INFO] Client from address {addr} disconnected.")
-
 def main():
-
     print(f"[INFO] Server listening on {HOST}:{PORT}")
 
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind((HOST, PORT))
-        s.listen(2)
+        s.listen(NUM_PLAYERS)
 
         players = []
 
         while len(players) < NUM_PLAYERS:
-            player = s.accept()
-            players.append(player)
-            print(f"[INFO] Client {len(players)} connected from {player[1]}")
+            conn, addr = s.accept()
+            print(f"[INFO] Client {len(players) + 1} connected from {addr}")
+            players.append((conn, addr))
+
+        # Extract rfile/wfile from both players
+        p1_conn, p1_addr = players[0]
+        p2_conn, p2_addr = players[1]
+
+        p1_rfile = p1_conn.makefile('r')
+        p1_wfile = p1_conn.makefile('w')
+
+        p2_rfile = p2_conn.makefile('r')
+        p2_wfile = p2_conn.makefile('w')
 
         print(f"[INFO] {NUM_PLAYERS} clients have connected. Starting game...")
 
-        for player in players:
-            client_thread = threading.Thread(target=handle_client, args=(player[0], player[1]))
-            client_thread.start()
+        try:
+            run_two_player_game_online(p1_rfile, p1_wfile, p2_rfile, p2_wfile)
+        except Exception as e:
+            print(f"[ERROR] Exception during game: {e}")
+        finally:
+            print("[INFO] Closing connections...")
+            p1_conn.close()
+            p2_conn.close()
 
 if __name__ == "__main__":
     main()

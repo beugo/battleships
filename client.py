@@ -3,8 +3,6 @@ client.py
 
 Connects to a Battleship server which runs the single-player game.
 Simply pipes user input to the server, and prints all server responses.
-
-TODO: Fix the message synchronization issue using concurrency (Tier 1, item 1).
 """
 
 import socket
@@ -15,7 +13,7 @@ HOST = '127.0.0.1'
 PORT = 5000
 
 running = True
-printing_ready = threading.Event()
+# printing_ready = threading.Event()
 
 def receive_messages(rfile):
     """Continuously receive and display messages from the server"""
@@ -42,8 +40,8 @@ def receive_messages(rfile):
             else:
                 print(line)
 
-            if line == "Enter coordinate to fire at (e.g. B5):":
-                printing_ready.set()
+            # if line == "Enter coordinate to fire at (e.g. B5):":
+            #     printing_ready.set()
 
         except Exception as e:
             print(f"[ERROR] Receiver thread: {e}")
@@ -65,9 +63,9 @@ def main():
 
         try:
             while running:
-                printing_ready.wait()
+                # printing_ready.wait()
                 user_input = input(">> ")
-                printing_ready.clear()
+                # printing_ready.clear()
 
                 wfile.write(user_input + '\n')
                 wfile.flush()
