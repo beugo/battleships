@@ -13,7 +13,7 @@ HOST = '127.0.0.1'
 PORT = 5000
 
 running = True
-# printing_ready = threading.Event()
+printing_ready = threading.Event()
 
 def receive_messages(rfile):
     """Continuously receive and display messages from the server"""
@@ -24,8 +24,9 @@ def receive_messages(rfile):
         try:
             line = rfile.readline()
             if not line:
-                print("[INFO] Server disconnected.")
+                print("[INFO] Server disconnected. Exiting client...")
                 running = False
+                printing_ready.set()
                 break
 
             line = line.strip()
@@ -40,8 +41,8 @@ def receive_messages(rfile):
             else:
                 print(line)
 
-            # if line == "Enter coordinate to fire at (e.g. B5):":
-            #     printing_ready.set()
+            if line == "\0":
+                printing_ready.set()
 
         except Exception as e:
             print(f"[ERROR] Receiver thread: {e}")
@@ -63,9 +64,11 @@ def main():
 
         try:
             while running:
-                # printing_ready.wait()
+                printing_ready.wait()
+                if running == False: 
+                    break
                 user_input = input(">> ")
-                # printing_ready.clear()
+                printing_ready.clear()
 
                 wfile.write(user_input + '\n')
                 wfile.flush()

@@ -340,11 +340,11 @@ def network_place_ships(board, rfile, wfile):
     send(wfile, "\nPlease place your ships manually on the board.")
     for ship_name, ship_size in SHIPS:
         while True:
+            send_board(wfile, board, True)
             send(wfile, f"\nPlacing your {ship_name} (size {ship_size})")
-            send_board(wfile, board)
-            send(wfile, "  Enter starting coordinate (e.g. A1):")
+            send(wfile, "  Enter starting coordinate (e.g. A1):\n\0")
             coord_str = rfile.readline().strip()
-            send(wfile, "  Orientation? Enter 'H' (horizontal) or 'V' (vertical):")
+            send(wfile, "  Orientation? Enter 'H' (horizontal) or 'V' (vertical):\n\0")
             orientation_str = rfile.readline().strip().upper()
 
             try:
@@ -381,31 +381,37 @@ def run_two_player_game_online(p1_rfile, p1_wfile, p2_rfile, p2_wfile):
     while True:
         attacker_rfile = p1_rfile if current_player == 1 else p2_rfile
         attacker_wfile = p1_wfile if current_player == 1 else p2_wfile
+        defender_wfile = p2_wfile if current_player == 1 else p1_wfile
         defender_board = board2 if current_player == 1 else board1
 
-        send_board(attacker_wfile, defender_board)
-        send(attacker_wfile, "Enter coordinate to fire at (e.g. B5):")
+        send(attacker_wfile, "Enter coordinate to fire at (e.g. B5):\n\0")
         
         guess = attacker_rfile.readline().strip()
         if guess.lower() == 'quit':
             send(attacker_wfile, "You forfeited the game.")
+            send(defender_wfile, "The other player has forfeited.")
             break
 
         try:
             row, col = parse_coordinate(guess)
             result, sunk_name = defender_board.fire_at(row, col)
+            send_board(attacker_wfile, defender_board)
             if result == "hit":
                 if sunk_name:
                     send(attacker_wfile, f"HIT! You sank the {sunk_name}!")
+                    send(defender_wfile, f"HIT! The other player has sunk your {sunk_name}!")
                 else:
                     send(attacker_wfile, "HIT!")
+                    send(defender_wfile, "You were HIT!")
             elif result == "miss":
                 send(attacker_wfile, "MISS!")
+                send(defender_wfile, "The attacker MISSED!")
             elif result == "already_shot":
                 send(attacker_wfile, "Already fired there.")
 
             if defender_board.all_ships_sunk():
                 send(attacker_wfile, "Congratulations! You win.")
+                send(defender_wfile, "You lost.")
                 break
 
             current_player = 2 if current_player == 1 else 1
