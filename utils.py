@@ -1,31 +1,30 @@
 import struct
 import json
 import enum
+import zlib
 
 class Frame:
     def __init__(self):
         self.type = None
-        self.seq = 0
         self.length = 0
         self.checksum = 0
         self.jsonmsg = b''
 
     def pack(self):
-        # c - character (1 byte)
         # H - unsigned short (2 bytes)
         # I - unsigned int (4 bytes)
         # {size}s - char[] (variable bytes according to size)
 
-        return struct.pack(f'cHHI{len(self.jsonmsg)}s', self.type, self.seq, self.length, self.checksum, self.jsonmsg)
+        return struct.pack(f'HHI{len(self.jsonmsg)}s', self.type, self.length, self.checksum, self.jsonmsg)
 
     def unpack(self, bytes):
-        payloadlen = len(bytes) - struct.calcsize('cHHI')
-        self.type, self.seq, self.length, self.checksum, self.jsonmsg = struct.unpack_from(f'cHHI{payloadlen}s', bytes)
+        payloadlen = len(bytes) - struct.calcsize('HHI')
+        self.type, self.length, self.checksum, self.jsonmsg = struct.unpack_from(f'HHHI{payloadlen}s', bytes)
 
 class MessageTypes(enum.Enum):
     # server -> client
     RESULT = 1 # forfeit, game win, hit/miss
-    BOARD = 2 # when placing ships, or when playing
+    BOARD = 2 # board for: placing, playing
     PROMPT = 3 # request for: placing ship, next coordinate
 
     # client -> server
@@ -52,6 +51,39 @@ _builders = {
 
 def build_json(type: MessageTypes, *args):
     return _builders[type](*args)
+
+def send_package(s, type: MessageTypes, json_dict: dict):
+    """
+    s = socket object of the individual you want to send to.
+    """
+    f = Frame()
+    f.type = type.value
+    json_msg = json.dumps(json_dict).encode('utf-8')
+    f.jsonmsg = json_msg
+    f.length = len(json_msg)
+
+    packed = f.pack()
+    f.checksum = zlib.crc32(packed)
+    packed = f.pack()
+
+    s.sendall(packed)
+
+
+def receive_package(s) -> dict:
+    """
+    s = socket object of the individual you are receiving from.
+    """
+    f = Frame()
+    byte_msg = s.recv(2048) #Receiving maximum 2kB. Unsure how large packages can be so this may need adjusting. Also note this is a blocking function.
+    f.unpack(byte_msg)
+
+    # TODO Check the checksum:
+    checksum = f.checksum
+    f.checksum = 0
+    if (checksum != zlib.crc32(f.pack)):
+        pass
+    
+    return json.loads(f.jsonmsg.decode('utf-8'))
 
 def send(wfile, msg):
     wfile.write(msg + '\n')
