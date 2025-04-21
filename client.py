@@ -3,8 +3,6 @@ client.py
 
 Connects to a Battleship server which runs the single-player game.
 Simply pipes user input to the server, and prints all server responses.
-
-TODO: Fix the message synchronization issue using concurrency (Tier 1, item 1).
 """
 
 import socket
@@ -26,8 +24,9 @@ def receive_messages(rfile):
         try:
             line = rfile.readline()
             if not line:
-                print("[INFO] Server disconnected.")
+                print("[INFO] Server disconnected. Exiting client...")
                 running = False
+                printing_ready.set()
                 break
 
             line = line.strip()
@@ -42,7 +41,7 @@ def receive_messages(rfile):
             else:
                 print(line)
 
-            if line == "Enter coordinate to fire at (e.g. B5):":
+            if line == "\0":
                 printing_ready.set()
 
         except Exception as e:
@@ -66,6 +65,8 @@ def main():
         try:
             while running:
                 printing_ready.wait()
+                if running == False: 
+                    break
                 user_input = input(">> ")
                 printing_ready.clear()
 
