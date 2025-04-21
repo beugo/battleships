@@ -1,5 +1,4 @@
 import socket
-import threading
 from battleship import run_two_player_game_online
 
 HOST = '127.0.0.1'
