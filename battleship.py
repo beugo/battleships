@@ -9,7 +9,7 @@ Contains core data structures and logic for Battleship, including:
 """
 
 import random
-from utils import send, send_board, receive
+from utils import *
 
 BOARD_SIZE = 10
 SHIPS = [
@@ -294,71 +294,71 @@ def run_single_player_game_locally():
             print("  >> Invalid input:", e)
 
 
-def run_single_player_game_online(rfile, wfile):
-    """
-    A test harness for running the single-player game with I/O redirected to socket file objects.
-    Expects:
-      - rfile: file-like object to .readline() from client
-      - wfile: file-like object to .write() back to client
-    """
-    board = Board(BOARD_SIZE)
-    board.place_ships_randomly(SHIPS)
+# def run_single_player_game_online(rfile, wfile):
+#     """
+#     A test harness for running the single-player game with I/O redirected to socket file objects.
+#     Expects:
+#       - rfile: file-like object to .readline() from client
+#       - wfile: file-like object to .write() back to client
+#     """
+#     board = Board(BOARD_SIZE)
+#     board.place_ships_randomly(SHIPS)
 
-    send("Welcome to Online Single-Player Battleship! Try to sink all the ships. Type 'quit' to exit.")
+#     send("Welcome to Online Single-Player Battleship! Try to sink all the ships. Type 'quit' to exit.")
 
-    moves = 0
-    while True:
-        send_board(board)
-        send("Enter coordinate to fire at (e.g. B5):")
-        guess = receive()
-        if guess.lower() == 'quit':
-            send("Thanks for playing. Goodbye.")
-            return
+#     moves = 0
+#     while True:
+#         send_board(board)
+#         send("Enter coordinate to fire at (e.g. B5):")
+#         guess = receive()
+#         if guess.lower() == 'quit':
+#             send("Thanks for playing. Goodbye.")
+#             return
 
-        try:
-            row, col = parse_coordinate(guess)
-            result, sunk_name = board.fire_at(row, col)
-            moves += 1
+#         try:
+#             row, col = parse_coordinate(guess)
+#             result, sunk_name = board.fire_at(row, col)
+#             moves += 1
 
-            if result == 'hit':
-                if sunk_name:
-                    send(f"HIT! You sank the {sunk_name}!")
-                else:
-                    send("HIT!")
-                if board.all_ships_sunk():
-                    send_board(board)
-                    send(f"Congratulations! You sank all ships in {moves} moves.")
-                    return
-            elif result == 'miss':
-                send("MISS!")
-            elif result == 'already_shot':
-                send("You've already fired at that location.")
-        except ValueError as e:
-            send(f"Invalid input: {e}")
+#             if result == 'hit':
+#                 if sunk_name:
+#                     send(f"HIT! You sank the {sunk_name}!")
+#                 else:
+#                     send("HIT!")
+#                 if board.all_ships_sunk():
+#                     send_board(board)
+#                     send(f"Congratulations! You sank all ships in {moves} moves.")
+#                     return
+#             elif result == 'miss':
+#                 send("MISS!")
+#             elif result == 'already_shot':
+#                 send("You've already fired at that location.")
+#         except ValueError as e:
+#             send(f"Invalid input: {e}")
 
-def network_place_ships(board, rfile, wfile):
-    send(wfile, "\nPlease place your ships manually on the board.")
+def network_place_ships(board, conn):
+    send_package(conn, MessageTypes.S_MESSAGE, "Please place your ships manually on the board.")
     for ship_name, ship_size in SHIPS:
         while True:
-            send_board(wfile, board, True)
-            send(wfile, f"\nPlacing your {ship_name} (size {ship_size})")
-            send(wfile, "  Enter starting coordinate (e.g. A1):\n\0")
-            coord_str = rfile.readline().strip()
-            send(wfile, "  Orientation? Enter 'H' (horizontal) or 'V' (vertical):\n\0")
-            orientation_str = rfile.readline().strip().upper()
+            send_package(conn, MessageTypes.BOARD, board, True)
+            send_package(conn, MessageTypes.S_MESSAGE, f"\nPlacing your {ship_name} (size {ship_size})")
+            send_package(conn, MessageTypes.PROMPT, "Enter starting coordinate (e.g. A1):")
+            coord_str = receive_package(conn).get("coord")
+            send_package(conn, MessageTypes.PROMPT, "Orientation? Enter 'H' (horizontal) or 'V' (vertical):")
+            orientation_str = receive_package(conn).get("coord")
 
             try:
                 row, col = parse_coordinate(coord_str)
             except ValueError as e:
-                send(wfile, f"  [!] Invalid coordinate: {e}")
+                send_package(conn, MessageTypes.S_MESSAGE, "[!] Invalid coordinate: {e}")
                 continue
 
-            if orientation_str == 'H':
+            if orientation_str.lower() == 'h':
                 orientation = 0
-            elif orientation_str == 'V':
+            elif orientation_str.lower() == 'v':
                 orientation = 1
             else:
-                send(wfile, "  [!] Invalid orientation. Please enter 'H' or 'V'.")
+                send_package(conn, MessageTypes.S_MESSAGE, "[!] Invalid orientation. Please enter 'H' or 'V'.")
                 continue
 
             if board.can_place_ship(row, col, ship_size, orientation):
@@ -369,55 +369,54 @@ def network_place_ships(board, rfile, wfile):
                 })
                 break
             else:
-                send(wfile, f"  [!] Cannot place {ship_name} at {coord_str} (orientation={orientation_str}). Try again.")
+                send_package(conn, MessageTypes.S_MESSAGE, "[!] Cannot place {ship_name} at {coord_str} (orientation={orientation_str}). Try again.")
 
-def run_two_player_game_online(p1_rfile, p1_wfile, p2_rfile, p2_wfile):
+def run_two_player_game_online(p1_conn, p2_conn):
     board1 = Board(BOARD_SIZE)
     board2 = Board(BOARD_SIZE)
-    network_place_ships(board1, p1_rfile, p1_wfile)
-    network_place_ships(board2, p2_rfile, p2_wfile)
+    network_place_ships(board1, p1_conn)
+    network_place_ships(board2, p2_conn)
 
     current_player = 1
     while True:
-        attacker_rfile = p1_rfile if current_player == 1 else p2_rfile
-        attacker_wfile = p1_wfile if current_player == 1 else p2_wfile
-        defender_wfile = p2_wfile if current_player == 1 else p1_wfile
+        attacker_conn = p1_conn if current_player == 1 else p2_conn
+        defender_conn = p2_conn if current_player == 1 else p1_conn
         defender_board = board2 if current_player == 1 else board1
 
-        send(attacker_wfile, "Enter coordinate to fire at (e.g. B5):\n\0")
+        send_package(attacker_conn, MessageTypes.PROMPT, "Enter coordinate to fire at (e.g. B5):")
         
-        guess = attacker_rfile.readline().strip()
+        guess = receive_package(attacker_conn).get("coord")
         if guess.lower() == 'quit':
-            send(attacker_wfile, "You forfeited the game.")
-            send(defender_wfile, "The other player has forfeited.")
+            send_package(attacker_conn, MessageTypes.RESULT, "You forfeited the game.")
+            send_package(defender_conn, MessageTypes.RESULT, "The other player has forfeited.")
             break
 
         try:
             row, col = parse_coordinate(guess)
             result, sunk_name = defender_board.fire_at(row, col)
-            send_board(attacker_wfile, defender_board)
+            send_package(attacker_conn, MessageTypes.BOARD, defender_board, False)
             if result == "hit":
                 if sunk_name:
-                    send(attacker_wfile, f"HIT! You sank the {sunk_name}!")
-                    send(defender_wfile, f"HIT! The other player has sunk your {sunk_name}!")
+                    send_package(attacker_conn, MessageTypes.RESULT, f"HIT! You sank the {sunk_name}!")
+                    send_package(defender_conn, MessageTypes.RESULT, f"HIT! The other player has sunk your {sunk_name}!")
                 else:
-                    send(attacker_wfile, "HIT!")
-                    send(defender_wfile, "You were HIT!")
+                    send_package(attacker_conn, MessageTypes.RESULT, "HIT!")
+                    send_package(defender_conn, MessageTypes.RESULT, "You were HIT!")
             elif result == "miss":
-                send(attacker_wfile, "MISS!")
-                send(defender_wfile, "The attacker MISSED!")
+                send_package(attacker_conn, MessageTypes.RESULT, "MISS!")
+                send_package(defender_conn, MessageTypes.RESULT, "The attacker MISSED!")
             elif result == "already_shot":
-                send(attacker_wfile, "Already fired there.")
+                send_package(attacker_conn, MessageTypes.RESULT, "Already fired there.")
 
             if defender_board.all_ships_sunk():
-                send(attacker_wfile, "Congratulations! You win.")
-                send(defender_wfile, "You lost.")
+                send_package(attacker_conn, MessageTypes.RESULT, "Congratulations! You win.")
+                send_package(defender_conn, MessageTypes.RESULT, "You lost.")
                 break
 
             current_player = 2 if current_player == 1 else 1
 
         except Exception as e:
-            send(attacker_wfile, f"Invalid input: {e}")
+            send_package(attacker_conn, MessageTypes.S_MESSAGE, f"Invalid input: {e}")
 
 if __name__ == "__main__":
     # Optional: run this file as a script to test single-player mode

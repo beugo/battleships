@@ -1,5 +1,6 @@
 import socket
 from battleship import run_two_player_game_online
+from utils import *
 
 HOST = '127.0.0.1'
 PORT = 5000
@@ -19,20 +20,13 @@ def main():
             print(f"[INFO] Client {len(players) + 1} connected from {addr}")
             players.append((conn, addr))
 
-        # Extract rfile/wfile from both players
-        p1_conn, p1_addr = players[0]
-        p2_conn, p2_addr = players[1]
-
-        p1_rfile = p1_conn.makefile('r')
-        p1_wfile = p1_conn.makefile('w')
-
-        p2_rfile = p2_conn.makefile('r')
-        p2_wfile = p2_conn.makefile('w')
+        p1_conn, _ = players[0]
+        p2_conn, _ = players[1]
 
         print(f"[INFO] {NUM_PLAYERS} clients have connected. Starting game...")
 
         try:
-            run_two_player_game_online(p1_rfile, p1_wfile, p2_rfile, p2_wfile)
+            run_two_player_game_online(p1_conn, p2_conn)
         except Exception as e:
             print(f"[ERROR] Exception during game: {e}")
         finally:
