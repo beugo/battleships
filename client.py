@@ -7,7 +7,7 @@ Simply pipes user input to the server, and prints all server responses.
 
 import socket
 import threading
-import time
+from utils import *
 
 HOST = '127.0.0.1'
 PORT = 5000
@@ -15,38 +15,31 @@ PORT = 5000
 running = True
 printing_ready = threading.Event()
 
-def receive_messages(rfile):
+def receive_messages(s):
     """Continuously receive and display messages from the server"""
 
     global running
 
     while running:
         try:
-            line = rfile.readline()
-            if not line:
-                print("[INFO] Server disconnected. Exiting client...")
+            package = receive_package(s)
+            if not package:
                 running = False
-                printing_ready.set()
                 break
-
-            line = line.strip()
-
-            if line == "GRID":
-                print("\n[Board]")
-                while True:
-                    board_line = rfile.readline()
-                    if not board_line or board_line.strip() == "":
-                        break
-                    print(board_line.strip())
+            type = package.get("type")
+            
+            if type == "board":
+                print(package.get("data"))
             else:
-                print(line)
+                print(package.get("msg"))
 
-            if line == "\0":
-                printing_ready.set()
+            if type == "prompt":
+                printing_ready.set() 
 
         except Exception as e:
             print(f"[ERROR] Receiver thread: {e}")
             running = False
+            printing_ready.set() 
             break
 
 
@@ -56,10 +49,8 @@ def main():
 
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.connect((HOST, PORT))
-        rfile = s.makefile('r')
-        wfile = s.makefile('w')
 
-        receiving_thread = threading.Thread(target=receive_messages, args=(rfile,), daemon=True)
+        receiving_thread = threading.Thread(target=receive_messages, args=(s,), daemon=True)
         receiving_thread.start()
 
         try:
@@ -70,8 +61,7 @@ def main():
                 user_input = input(">> ")
                 printing_ready.clear()
 
-                wfile.write(user_input + '\n')
-                wfile.flush()
+                send_package(s, MessageTypes.COMMAND, user_input)
 
         except KeyboardInterrupt:
             print("\n[INFO] Client exiting.")
@@ -81,10 +71,9 @@ def main():
             print("[INFO] Shutting everything down...")
 
             try:
-                wfile.write("quit\n")
-                wfile.flush()
-            except:
-                pass
+                send_package(s, MessageTypes.COMMAND, "quit")
+            except Exception as e:
+                print(f"[WARN] Could not send quit: {e}")
 
             s.close()
             print("[INFO] Client has shut down nice and gracefully.")
