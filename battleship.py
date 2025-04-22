@@ -350,7 +350,7 @@ def network_place_ships(board, conn):
             try:
                 row, col = parse_coordinate(coord_str)
             except ValueError as e:
-                send_package(conn, MessageTypes.S_MESSAGE, "[!] Invalid coordinate: {e}")
+                send_package(conn, MessageTypes.S_MESSAGE, f"[!] Invalid coordinate: {e}")
                 continue
 
             if orientation_str.lower() == 'h':

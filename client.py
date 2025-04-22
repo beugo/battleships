@@ -72,8 +72,8 @@ def main():
 
             try:
                 send_package(s, MessageTypes.COMMAND, "quit")
-            except:
-                pass
+            except Exception as e:
+                print(f"[WARN] Could not send quit: {e}")
 
             s.close()
             print("[INFO] Client has shut down nice and gracefully.")
