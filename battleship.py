@@ -354,23 +354,26 @@ def network_place_ships(board, conn):
         while True:
             send_package(conn, MessageTypes.BOARD, board, True)
             send_package(conn, MessageTypes.S_MESSAGE, f"\nPlacing your {ship_name} (size {ship_size})")
-            send_package(conn, MessageTypes.PROMPT, "Enter starting coordinate (e.g. A1):")
-            coord_str = receive_package(conn).get("coord")
-            send_package(conn, MessageTypes.PROMPT, "Orientation? Enter 'H' (horizontal) or 'V' (vertical):")
-            orientation_str = receive_package(conn).get("coord")
+            send_package(conn, MessageTypes.PROMPT, "Enter starting coordinate followed by orientation (e.g. A1 V):")
+            placement = receive_package(conn).get("coord").strip().upper()
 
             try:
+                # split the response
+                pieces = placement.split()
+                if len(pieces) != 2:
+                    raise ValueError("Incorrect format.")
+                coord_str, orientation_str = pieces
+
+                # check the row and column
                 row, col = parse_coordinate(coord_str)
+
+                # check the orientation
+                if orientation_str not in ("H", "V"):
+                    raise ValueError("Orientation must be either 'H' or 'V'.")
+                orientation = 0 if orientation_str == "H" else 1
+
             except ValueError as e:
                 send_package(conn, MessageTypes.S_MESSAGE, f"[!] Invalid coordinate: {e}")
-                continue
-
-            if orientation_str.lower() == 'h':
-                orientation = 0
-            elif orientation_str.lower() == 'v':
-                orientation = 1
-            else:
-                send_package(conn, MessageTypes.S_MESSAGE, "[!] Invalid orientation. Please enter 'H' or 'V'.")
                 continue
 
             if board.can_place_ship(row, col, ship_size, orientation):
@@ -395,7 +398,7 @@ def run_two_player_game_online(p1_conn, p2_conn):
         defender_conn = p2_conn if current_player == 1 else p1_conn
         defender_board = board2 if current_player == 1 else board1
 
-        send_package(attacker_conn, MessageTypes.PROMPT, "Enter coordinate to fire at (e.g. B5):")
+        send_package(attacker_conn, MessageTypes.PROMPT, "Enter coordinate to fire at (e.g. B5) or 'quit' to forfeit:")
         
         guess = receive_package(attacker_conn).get("coord")
         if guess.lower() == 'quit':
