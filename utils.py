@@ -26,6 +26,7 @@ class MessageTypes(enum.Enum):
     BOARD = 2 # board for: placing, playing
     PROMPT = 3 # request for: placing ship, next coordinate
     S_MESSAGE = 4 # for general server to client msgs
+    WAITING = 5 # tell client to show spinner
 
     # client -> server
     COMMAND = 0 # place ship, shoot
@@ -45,12 +46,16 @@ def _build_command(data):
 def _build_s_message(msg):
     return {"type": "s_msg", "msg": msg}
 
+def _build_waiting():
+    return {"type": "waiting"}
+
 _builders = {
     MessageTypes.RESULT: _build_result,
     MessageTypes.BOARD: _build_board,
     MessageTypes.PROMPT: _build_prompt,
     MessageTypes.COMMAND: _build_command,
-    MessageTypes.S_MESSAGE: _build_s_message
+    MessageTypes.S_MESSAGE: _build_s_message,
+    MessageTypes.WAITING: _build_waiting
 }
 
 def _build_json(type: MessageTypes, *args):

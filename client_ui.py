@@ -3,6 +3,7 @@ from rich.panel import Panel
 from rich.spinner import Spinner
 from rich.live import Live
 from rich.table import Table
+from rich.align import Align
 import threading
 import time
 
@@ -14,14 +15,20 @@ def print_boxed(msg, title=None, style="cyan"):
     console.print(Panel(msg, title=title, expand=False, style=style), justify="center")
 
 def spinner_worker(msg):
-    with Live(Spinner("dots", text=msg), refresh_per_second=10) as live:
+    spinner = Spinner("dots", text=msg)
+    panel = Panel(spinner, border_style="cyan", expand=False)
+    layout = Align.center(panel)
+
+    with Live(layout, refresh_per_second=10) as live:
         while spinner_active.is_set():
             time.sleep(0.1)
+        
+        live.update(Align.center(""))
 
-def start_spinner(msg):
+def start_spinner(msg="Waiting for opponent..."):
     global spinner_thread
     if spinner_active.is_set():
-        return  # already spinning
+        return  # already running
     spinner_active.set()
     spinner_thread = threading.Thread(target=spinner_worker, args=(msg,), daemon=True)
     spinner_thread.start()

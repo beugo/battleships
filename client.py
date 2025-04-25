@@ -10,10 +10,6 @@ running = True
 printing_ready = threading.Event()
 console = Console()
 
-def print_boxed(msg, title=None, style="cyan"):
-    """Print a message inside a Rich panel box"""
-    console.print(Panel(msg, title=title, expand=False, style=style), justify="center")
-
 def receive_messages(s):
     """Continuously receive and display messages from the server"""
 
@@ -28,13 +24,18 @@ def receive_messages(s):
 
             type = package.get("type")
 
+            if type != "waiting":
+                stop_spinner()
+
             if type == "board":
                 print_board_as_table(package.get("data"))
+            elif type == "prompt":
+                printing_ready.set()
+                print_boxed(package.get("msg"), style="green") 
+            elif type == "waiting":
+                start_spinner()
             else:
                 print_boxed(package.get("msg"), style="cyan")
-
-            if type == "prompt":
-                printing_ready.set()
 
         except Exception as e:
             print_boxed(f"[ERROR] Receiver thread: {e}", title="Error", style="red")
