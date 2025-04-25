@@ -389,7 +389,9 @@ def network_place_ships(board, conn):
 def run_two_player_game_online(p1_conn, p2_conn):
     board1 = Board(BOARD_SIZE)
     board2 = Board(BOARD_SIZE)
+    send_package(p2_conn, MessageTypes.S_MESSAGE, "Please wait whilst the other player places their ships.")
     network_place_ships(board1, p1_conn)
+    send_package(p1_conn, MessageTypes.S_MESSAGE, "Please wait whilst the other player places their ships.")
     network_place_ships(board2, p2_conn)
 
     current_player = 1
