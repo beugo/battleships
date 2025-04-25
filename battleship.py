@@ -236,11 +236,23 @@ def parse_coordinate(coord_str):
     HINT: you might want to add additional input validation here...
     """
     coord_str = coord_str.strip().upper()
+
+    if len(coord_str) not in [2, 3]:
+        raise ValueError("Coordinate is not the right size.")
+    
     row_letter = coord_str[0]
     col_digits = coord_str[1:]
 
+    if not row_letter.isalpha() or not col_digits.isdigit():
+        raise ValueError("Incorrect coordinate format.")
+
     row = ord(row_letter) - ord('A')
     col = int(col_digits) - 1  # zero-based
+
+    if not (0 <= row < BOARD_SIZE):
+        raise ValueError("Row value not within board.")
+    if not (0 <= col < BOARD_SIZE):
+        raise ValueError("Column value not within board.")
 
     return (row, col)
 
@@ -369,7 +381,7 @@ def network_place_ships(board, conn):
                 })
                 break
             else:
-                send_package(conn, MessageTypes.S_MESSAGE, "[!] Cannot place {ship_name} at {coord_str} (orientation={orientation_str}). Try again.")
+                send_package(conn, MessageTypes.S_MESSAGE, f"[!] Cannot place {ship_name} at {coord_str} (orientation={orientation_str}). Try again.")
 
 def run_two_player_game_online(p1_conn, p2_conn):
     board1 = Board(BOARD_SIZE)
