@@ -353,7 +353,7 @@ def network_place_ships(board, conn):
     for ship_name, ship_size in SHIPS:
         while True:
             send_package(conn, MessageTypes.BOARD, board, True)
-            send_package(conn, MessageTypes.S_MESSAGE, f"\nPlacing your {ship_name} (size {ship_size})")
+            send_package(conn, MessageTypes.S_MESSAGE, f"Placing your {ship_name} (size {ship_size})")
             send_package(conn, MessageTypes.PROMPT, "Enter starting coordinate followed by orientation (e.g. A1 V):")
             placement = receive_package(conn).get("coord").strip().upper()
 
@@ -389,7 +389,11 @@ def network_place_ships(board, conn):
 def run_two_player_game_online(p1_conn, p2_conn):
     board1 = Board(BOARD_SIZE)
     board2 = Board(BOARD_SIZE)
+
+    send_package(p2_conn, MessageTypes.S_MESSAGE, "Please wait patiently for your opponent to place their ships...")
     network_place_ships(board1, p1_conn)
+    
+    send_package(p1_conn, MessageTypes.S_MESSAGE, "Please wait patiently for your opponent to place their ships...")
     network_place_ships(board2, p2_conn)
 
     current_player = 1

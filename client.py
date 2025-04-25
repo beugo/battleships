@@ -1,19 +1,20 @@
-"""
-client.py
-
-Connects to a Battleship server which runs the single-player game.
-Simply pipes user input to the server, and prints all server responses.
-"""
-
 import socket
 import threading
 from utils import *
+
+from rich.console import Console
+from rich.panel import Panel
 
 HOST = '127.0.0.1'
 PORT = 5000
 
 running = True
 printing_ready = threading.Event()
+console = Console()
+
+def print_boxed(msg, title=None, style="cyan"):
+    """Print a message inside a Rich panel box"""
+    console.print(Panel(msg, title=title, expand=False, style=style), justify="center")
 
 def receive_messages(s):
     """Continuously receive and display messages from the server"""
@@ -26,25 +27,24 @@ def receive_messages(s):
             if not package:
                 running = False
                 break
+
             type = package.get("type")
-            
+
             if type == "board":
-                print(package.get("data"))
+                console.print(package.get("data"), style="bold white")
             else:
-                print(package.get("msg"))
+                print_boxed(package.get("msg"), style="cyan")
 
             if type == "prompt":
-                printing_ready.set() 
+                printing_ready.set()
 
         except Exception as e:
-            print(f"[ERROR] Receiver thread: {e}")
+            print_boxed(f"[ERROR] Receiver thread: {e}", title="Error", style="red")
             running = False
-            printing_ready.set() 
+            printing_ready.set()
             break
 
-
 def main():
-
     global running
 
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -56,27 +56,27 @@ def main():
         try:
             while running:
                 printing_ready.wait()
-                if running == False: 
+                if not running:
                     break
-                user_input = input(">> ")
+                user_input = console.input("[bold green]>> [/bold green]")
                 printing_ready.clear()
 
                 send_package(s, MessageTypes.COMMAND, user_input)
 
         except KeyboardInterrupt:
-            print("\n[INFO] Client exiting.")
+            print_boxed("[INFO] Client exiting.", style="yellow")
             running = False
 
         finally:
-            print("[INFO] Shutting everything down...")
+            print_boxed("[INFO] Shutting everything down...", style="yellow")
 
             try:
                 send_package(s, MessageTypes.COMMAND, "quit")
             except Exception as e:
-                print(f"[WARN] Could not send quit: {e}")
+                print_boxed(f"[WARN] Could not send quit: {e}", title="Warning", style="magenta")
 
             s.close()
-            print("[INFO] Client has shut down nice and gracefully.")
+            print_boxed("[INFO] Client has shut down nice and gracefully.", style="green")
 
 if __name__ == "__main__":
     main()
