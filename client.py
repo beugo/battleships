@@ -1,9 +1,7 @@
 import socket
 import threading
 from utils import *
-
-from rich.console import Console
-from rich.panel import Panel
+from client_ui import *
 
 HOST = '127.0.0.1'
 PORT = 5000
@@ -31,7 +29,7 @@ def receive_messages(s):
             type = package.get("type")
 
             if type == "board":
-                console.print(package.get("data"), style="bold white")
+                print_board_as_table(package.get("data"))
             else:
                 print_boxed(package.get("msg"), style="cyan")
 
