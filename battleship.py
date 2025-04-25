@@ -394,6 +394,7 @@ def run_two_player_game_online(p1_conn, p2_conn):
     network_place_ships(board1, p1_conn)
     
     send_package(p1_conn, MessageTypes.WAITING, "Waiting for opponent to place their ships...")
+
     network_place_ships(board2, p2_conn)
 
     current_player = 1
