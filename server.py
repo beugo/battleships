@@ -19,8 +19,9 @@ def main():
             while len(players) < NUM_PLAYERS:
                 conn, addr = s.accept()
                 print(f"[INFO] Client {len(players) + 1} connected from {addr}")
-                send_package(conn, MessageTypes.S_MESSAGE, "Connected. You may have to wait some time.")
                 players.append((conn, addr))
+                if len(players) < NUM_PLAYERS:
+                    send_package(conn, MessageTypes.WAITING, "Waiting for an opponent to connect...")
 
             p1_conn, p1_addr = players[0]
             p2_conn, p2_addr = players[1]
