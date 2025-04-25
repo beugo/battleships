@@ -38,9 +38,8 @@ def simulate_client(name, moves, placements):
                     game_over = True
                     break
 
-    for coord, orient in placements:
+    for coord in placements:
         wait_for_prompt_and_respond("coordinate", coord)
-        wait_for_prompt_and_respond("Orientation", orient)
     finished_placing = True
     print(f"{name} has finished placing ships.\n")
 
@@ -69,8 +68,8 @@ if __name__ == "__main__":
     server_proc = start_server()
     time.sleep(1)  # Allow server time to start
 
-    player1_placements = [("A1", "H"), ("B1", "H"), ("C1", "H"), ("D1", "H"), ("E1", "H")]
-    player2_placements = [("J1", "H"), ("I1", "H"), ("H1", "H"), ("G1", "H"), ("F1", "H")]
+    player1_placements = ["A1 H", "B1 H", "C1 H", "D1 H", "E1 H"]
+    player2_placements = ["J1 H", "I1 H", "H1 H", "G1 H", "F1 H"]
 
     player1_moves = [
         "J1", "I1", "H1", "G1", "F1",  # Carrier
