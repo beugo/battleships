@@ -33,7 +33,7 @@ def receive_messages(s):
                 print_boxed(package.get("msg"), style="green") 
                 printing_ready.set()
             elif type == "waiting":
-                start_spinner()
+                start_spinner(package.get("msg"))
             else:
                 print_boxed(package.get("msg"), style="cyan")
 

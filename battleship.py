@@ -390,10 +390,10 @@ def run_two_player_game_online(p1_conn, p2_conn):
     board1 = Board(BOARD_SIZE)
     board2 = Board(BOARD_SIZE)
 
-    send_package(p2_conn, MessageTypes.WAITING)
+    send_package(p2_conn, MessageTypes.WAITING, "Waiting for opponent to place their ships...")
     network_place_ships(board1, p1_conn)
     
-    send_package(p1_conn, MessageTypes.WAITING)
+    send_package(p1_conn, MessageTypes.WAITING, "Waiting for opponent to place their ships...")
     network_place_ships(board2, p2_conn)
 
     current_player = 1
@@ -403,7 +403,7 @@ def run_two_player_game_online(p1_conn, p2_conn):
         defender_board = board2 if current_player == 1 else board1
 
         send_package(attacker_conn, MessageTypes.PROMPT, "Enter coordinate to fire at (e.g. B5) or 'quit' to forfeit:")
-        send_package(defender_conn, MessageTypes.WAITING)
+        send_package(defender_conn, MessageTypes.WAITING, "Waiting for opponent to fire...")
         
         guess = receive_package(attacker_conn).get("coord")
         if guess.lower() == 'quit':

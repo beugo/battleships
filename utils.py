@@ -46,8 +46,8 @@ def _build_command(data):
 def _build_s_message(msg):
     return {"type": "s_msg", "msg": msg}
 
-def _build_waiting():
-    return {"type": "waiting"}
+def _build_waiting(msg):
+    return {"type": "waiting", "msg": msg}
 
 _builders = {
     MessageTypes.RESULT: _build_result,
