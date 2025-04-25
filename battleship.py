@@ -403,6 +403,7 @@ def run_two_player_game_online(p1_conn, p2_conn):
         defender_board = board2 if current_player == 1 else board1
 
         send_package(attacker_conn, MessageTypes.PROMPT, "Enter coordinate to fire at (e.g. B5) or 'quit' to forfeit:")
+        send_package(defender_conn, MessageTypes.WAITING)
         
         guess = receive_package(attacker_conn).get("coord")
         if guess.lower() == 'quit':

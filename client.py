@@ -30,8 +30,8 @@ def receive_messages(s):
             if type == "board":
                 print_board_as_table(package.get("data"))
             elif type == "prompt":
-                printing_ready.set()
                 print_boxed(package.get("msg"), style="green") 
+                printing_ready.set()
             elif type == "waiting":
                 start_spinner()
             else:
