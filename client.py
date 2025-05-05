@@ -2,6 +2,7 @@ import socket
 import threading
 from utils import *
 from client_ui import *
+from inputimeout import inputimeout, TimeoutOccurred
 
 HOST = '127.0.0.1'
 PORT = 5000
@@ -29,11 +30,16 @@ def receive_messages(s):
 
             if type == "board":
                 print_board_as_table(package.get("data"))
+
             elif type == "prompt":
-                print_boxed(package.get("msg"), style="green") 
+                print_boxed(package.get("msg"), style="green")
+                global input_timeout
+                input_timeout = package.get("timeout")
                 printing_ready.set()
+
             elif type == "waiting":
                 start_spinner(package.get("msg"))
+
             else:
                 print_boxed(package.get("msg"), style="cyan")
 
@@ -55,12 +61,22 @@ def main():
         try:
             while running:
                 printing_ready.wait()
+
                 if not running:
                     break
-                user_input = console.input("[bold green]>> [/bold green]")
-                printing_ready.clear()
 
-                send_package(s, MessageTypes.COMMAND, user_input)
+                if input_timeout is None:
+                    user_input = console.input("[bold green]>> [/bold green]")
+                else:
+                    try:
+                        user_input = inputimeout(">> ", input_timeout)
+                    except TimeoutOccurred:
+                        send_package(s, MessageTypes.COMMAND, "", True) # Empty command with True flag for timeout - that way the user cannot replicate it artificially.
+                        printing_ready.clear()
+                        continue
+
+                printing_ready.clear()
+                send_package(s, MessageTypes.COMMAND, user_input, False)
 
         except KeyboardInterrupt:
             print_boxed("[INFO] Client exiting.", style="yellow")
@@ -68,12 +84,6 @@ def main():
 
         finally:
             print_boxed("[INFO] Shutting everything down...", style="yellow")
-
-            try:
-                send_package(s, MessageTypes.COMMAND, "quit")
-            except Exception as e:
-                print_boxed(f"[WARN] Could not send quit: {e}", title="Warning", style="magenta")
-
             s.close()
             print_boxed("[INFO] Client has shut down nice and gracefully.", style="green")
 

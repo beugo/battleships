@@ -14,7 +14,6 @@ class Player:
     def __init__(self, conn, addr):
         self.conn = conn
         self.addr = addr
-        self.playing = False
 
 def connect_with_clients(s: socket.socket):
     s.bind((HOST, PORT))
@@ -35,8 +34,8 @@ def play_game(p1: Player, p2: Player):
         send_package(p2.conn, MessageTypes.S_MESSAGE, "Game over. Please wait 5 seconds for the next game...")
         time.sleep(5)
 
-        send_package(p1.conn, MessageTypes.PROMPT, "Want to play again ? (yes/no)")
-        send_package(p2.conn, MessageTypes.PROMPT, "Want to play again ? (yes/no)")
+        send_package(p1.conn, MessageTypes.PROMPT, "Want to play again ? (yes/no)", None)
+        send_package(p2.conn, MessageTypes.PROMPT, "Want to play again ? (yes/no)", None)
 
         response1 = receive_package(p1.conn).get("coord").upper()
         response2 = receive_package(p2.conn).get("coord").upper()

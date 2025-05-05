@@ -38,11 +38,11 @@ def _build_result(msg: str):
 def _build_board(show_ships: bool, board):
     return {"type": "board", "ships": show_ships, "data": board}
 
-def _build_prompt(msg):
-    return {"type": "prompt", "msg": msg}
+def _build_prompt(msg, timeout):
+    return {"type": "prompt", "timeout": timeout, "msg": msg}
 
-def _build_command(data):
-    return {"type": "command", "coord": data}
+def _build_command(data, timeout: bool):
+    return {"type": "command", "timeout": timeout, "coord": data}
 
 def _build_s_message(msg):
     return {"type": "s_msg", "msg": msg}
@@ -114,22 +114,15 @@ def send_package(s, type: MessageTypes, *args):
 
     s.sendall(packed)
 
-def receive_package(s, timeout=None) -> dict:
+def receive_package(s) -> dict:
     """
     s = socket object of the individual you are receiving from.
     """
     f = Frame()
-    s.settimeout(timeout)
+    header = _recv_exact(s, 8) # 8 bytes is the size of our header.
+    f.unpack_header(header)
+    f.jsonmsg = _recv_exact(s, f.length)
 
-    try:
-        header = _recv_exact(s, 8) # 8 bytes is the size of our header.
-        f.unpack_header(header)
-        f.jsonmsg = _recv_exact(s, f.length)
-    except socket.timeout:
-        raise TimeoutError("Timed out.")
-    finally:
-        s.settimeout(None)
- 
     # TODO:
     checksum = f.checksum
     f.checksum = 0

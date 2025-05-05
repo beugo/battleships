@@ -12,6 +12,7 @@ import random
 from utils import *
 
 BOARD_SIZE = 10
+TIMEOUT_DURATION = 30
 SHIPS = [
     ("Carrier", 5),
     ("Battleship", 4),
@@ -354,7 +355,7 @@ def network_place_ships(board, conn):
         while True:
             send_package(conn, MessageTypes.BOARD, board, True)
             send_package(conn, MessageTypes.S_MESSAGE, f"Placing your {ship_name} (size {ship_size})")
-            send_package(conn, MessageTypes.PROMPT, "Enter starting coordinate followed by orientation (e.g. A1 V):")
+            send_package(conn, MessageTypes.PROMPT, "Enter starting coordinate followed by orientation (e.g. A1 V):", None)
             placement = receive_package(conn).get("coord").strip().upper()
 
             try:
@@ -402,12 +403,13 @@ def run_two_player_game_online(p1_conn, p2_conn):
         defender_conn = p2_conn if current_player == 1 else p1_conn
         defender_board = board2 if current_player == 1 else board1
 
-        send_package(attacker_conn, MessageTypes.PROMPT, "Enter coordinate to fire at (e.g. B5) or 'quit' to forfeit:")
+        send_package(attacker_conn, MessageTypes.PROMPT, "Enter coordinate to fire at (e.g. B5) or 'quit' to forfeit:", TIMEOUT_DURATION)
         send_package(defender_conn, MessageTypes.WAITING, "Waiting for opponent to fire...")
         
-        try:
-            guess = receive_package(attacker_conn, 30).get("coord")
-        except TimeoutError:
+        package = receive_package(attacker_conn)
+        guess = package.get("coord")
+
+        if package.get("timeout"):
             send_package(attacker_conn, MessageTypes.RESULT, "You took too long. Skipping your turn.")
             send_package(defender_conn, MessageTypes.RESULT, "Opponent time out. It is now your turn.")
             current_player = 2 if current_player == 1 else 1
