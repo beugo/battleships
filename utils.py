@@ -41,8 +41,8 @@ def _build_board(show_ships: bool, board):
 def _build_prompt(msg, timeout):
     return {"type": "prompt", "timeout": timeout, "msg": msg}
 
-def _build_command(data, timeout: bool):
-    return {"type": "command", "timeout": timeout, "coord": data}
+def _build_command(data, timed_out: bool):
+    return {"type": "command", "timeout": timed_out, "coord": data}
 
 def _build_s_message(msg):
     return {"type": "s_msg", "msg": msg}
