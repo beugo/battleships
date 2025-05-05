@@ -1,3 +1,4 @@
+import socket
 import struct
 import json
 import enum
@@ -113,14 +114,21 @@ def send_package(s, type: MessageTypes, *args):
 
     s.sendall(packed)
 
-def receive_package(s) -> dict:
+def receive_package(s, timeout=None) -> dict:
     """
     s = socket object of the individual you are receiving from.
     """
     f = Frame()
-    header = _recv_exact(s, 8) # 8 bytes is the size of our header.
-    f.unpack_header(header)
-    f.jsonmsg = _recv_exact(s, f.length)
+    s.settimeout(timeout)
+
+    try:
+        header = _recv_exact(s, 8) # 8 bytes is the size of our header.
+        f.unpack_header(header)
+        f.jsonmsg = _recv_exact(s, f.length)
+    except socket.timeout:
+        raise TimeoutError("Timed out.")
+    finally:
+        s.settimeout(None)
  
     # TODO:
     checksum = f.checksum

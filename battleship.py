@@ -394,7 +394,6 @@ def run_two_player_game_online(p1_conn, p2_conn):
     network_place_ships(board1, p1_conn)
     
     send_package(p1_conn, MessageTypes.WAITING, "Waiting for opponent to place their ships...")
-
     network_place_ships(board2, p2_conn)
 
     current_player = 1
@@ -406,7 +405,14 @@ def run_two_player_game_online(p1_conn, p2_conn):
         send_package(attacker_conn, MessageTypes.PROMPT, "Enter coordinate to fire at (e.g. B5) or 'quit' to forfeit:")
         send_package(defender_conn, MessageTypes.WAITING, "Waiting for opponent to fire...")
         
-        guess = receive_package(attacker_conn).get("coord")
+        try:
+            guess = receive_package(attacker_conn, 30).get("coord")
+        except TimeoutError:
+            send_package(attacker_conn, MessageTypes.RESULT, "You took too long. Skipping your turn.")
+            send_package(defender_conn, MessageTypes.RESULT, "Opponent time out. It is now your turn.")
+            current_player = 2 if current_player == 1 else 1
+            continue
+
         if guess.lower() == 'quit':
             send_package(attacker_conn, MessageTypes.RESULT, "You forfeited the game.")
             send_package(defender_conn, MessageTypes.RESULT, "The other player has forfeited.")
