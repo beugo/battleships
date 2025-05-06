@@ -1,3 +1,4 @@
+import socket
 import struct
 import json
 import enum
@@ -37,11 +38,11 @@ def _build_result(msg: str):
 def _build_board(show_ships: bool, board):
     return {"type": "board", "ships": show_ships, "data": board}
 
-def _build_prompt(msg):
-    return {"type": "prompt", "msg": msg}
+def _build_prompt(msg, timeout):
+    return {"type": "prompt", "timeout": timeout, "msg": msg}
 
-def _build_command(data):
-    return {"type": "command", "coord": data}
+def _build_command(data, timed_out: bool):
+    return {"type": "command", "timeout": timed_out, "coord": data}
 
 def _build_s_message(msg):
     return {"type": "s_msg", "msg": msg}
@@ -121,7 +122,7 @@ def receive_package(s) -> dict:
     header = _recv_exact(s, 8) # 8 bytes is the size of our header.
     f.unpack_header(header)
     f.jsonmsg = _recv_exact(s, f.length)
- 
+
     # TODO:
     checksum = f.checksum
     f.checksum = 0
