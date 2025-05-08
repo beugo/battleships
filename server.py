@@ -49,8 +49,7 @@ def handle_rematch(p1: Player, p2: Player):
     Otherwise shut down any 'no' players and leave
     survivors in the lobby.
     """
-    # give players 5s to see final S_MESSAGE
-    time.sleep(5)
+    time.sleep(3)
 
     # ask each
     send_package(p1.conn, MessageTypes.PROMPT, "Want to play again? (yes/no)", None)
@@ -68,15 +67,14 @@ def handle_rematch(p1: Player, p2: Player):
     # shut down those who said no
     for player, resp in ((p1, resp1), (p2, resp2)):
         if resp != "YES":
-            send_package(player.conn, MessageTypes.QUIT, "Bye! Thanks for playing.")
+            send_package(player.conn, MessageTypes.SHUTDOWN, "Bye! Thanks for playing.")
             player.conn.close()
             with players_lock:
                 players.remove(player)
 
-    # anyone left stays in lobby
     with players_lock:
         for survivor in players:
-            send_package(survivor.conn, MessageTypes.S_MESSAGE, "Waiting for a new opponent...")
+            send_package(survivor.conn, MessageTypes.WAITING, "Waiting for a new opponent...")
 
 def handle_early_exit(p1: Player, p2: Player):
     """
@@ -97,7 +95,6 @@ def handle_early_exit(p1: Player, p2: Player):
             with players_lock:
                 if exiting in players:
                     players.remove(exiting)
-            # tell survivor
             send_package(survivor.conn, MessageTypes.WAITING,
                          "Your opponent disconnected. Waiting for someone new...")
             return
@@ -128,10 +125,11 @@ def main():
         with players_lock:
             for p in players:
                 try:
-                    send_package(p.conn, MessageTypes.QUIT,
+                    send_package(p.conn, MessageTypes.SHUTDOWN,
                                  "Server is shutting down.")
                     p.conn.close()
                 except:
+                    print("[INFO] Was unable to send shutdown message to clients")
                     pass
     finally:
         server_sock.close()
