@@ -1,7 +1,7 @@
 import socket
 import threading
 import time
-from battleship import BOARD_SIZE, Board, run_two_player_game_online
+from battleship import run_two_player_game_online
 from utils import *
 
 HOST = '127.0.0.1'
@@ -32,72 +32,125 @@ def send_queue_pos():
     if num_players == 1:
         send_package(players[0].conn, MessageTypes.WAITING, "Please wait whilst we find you an opponent.")
         return
-    for i in range(2, num_players): #Skip 1st and 2nd player as they are in the game already.
+    for i in range(2, num_players): # Skip 1st and 2nd player as they are in the game already.
         player = players[i]
         send_package(player.conn, MessageTypes.S_MESSAGE, f"You are in position ({i-1}) of the queue to play battleship.")
         send_package(player.conn, MessageTypes.WAITING, "Waiting...")
 
-def connect_with_clients(s: socket.socket):
+def accept_clients(s: socket.socket):
     s.bind((HOST, PORT))
-    s.listen(CLIENT_LIMIT)
+    s.listen()
+    print(f"[INFO] Server listening on {HOST}:{PORT}")
     while True:
         while len(players) < CLIENT_LIMIT:
             conn, addr = s.accept()
-            print(f"[INFO] Client connected from {addr}")
+            player = Player(conn, addr)
             with players_lock:
-                players.append(Player(conn, addr))
+                players.append(player)
+                index = len(players)
+            print(f"[INFO] Client {index} connected from {addr}")
+            # If they’re the first of two, tell them to wait
             send_queue_pos()
-        time.sleep(1)
 
-def play_game(p1: Player, p2: Player):
-    try:
-        run_two_player_game_online(p1.conn, p2.conn)
+def handle_match(p1: Player, p2: Player):
+    """
+    Run exactly one match between p1 and p2, then dispatch
+    based on how it returned.
+    """
+    result = run_two_player_game_online(p1.conn, p2.conn)
+    if result == "done":
+        handle_rematch(p1, p2)
+    elif result == "early_exit":
+        handle_early_exit(p1, p2)
 
-        send_package(p1.conn, MessageTypes.S_MESSAGE, "Game over. Please wait 5 seconds for the next game...")
-        send_package(p2.conn, MessageTypes.S_MESSAGE, "Game over. Please wait 5 seconds for the next game...")
-        time.sleep(5)
+def handle_rematch(p1: Player, p2: Player):
+    """
+    Ask both players if they want a rematch.
+    If both say YES, recurse back into handle_match.
+    Otherwise shut down any 'no' players and leave
+    survivors in the lobby.
+    """
+    time.sleep(3)
 
-        send_package(p1.conn, MessageTypes.PROMPT, "Want to play again ? (yes/no)", None)
-        send_package(p2.conn, MessageTypes.PROMPT, "Want to play again ? (yes/no)", None)
+    # ask each
+    send_package(p1.conn, MessageTypes.PROMPT, "Want to play again? (yes/no)", None)
+    send_package(p2.conn, MessageTypes.PROMPT, "Want to play again? (yes/no)", None)
 
-        response1 = receive_package(p1.conn).get("coord").upper()
-        response2 = receive_package(p2.conn).get("coord").upper()
+    resp1 = receive_package(p1.conn).get("coord", "").strip().upper() # need to account for client disconnecting here
+    resp2 = receive_package(p2.conn).get("coord", "").strip().upper()
 
-        if response1 == "YES" and response2 == "YES":
-            print("[INFO] Starting game again with the same players.")
-        else:
-            print("[INFO] At least one player has declined. Closing the appropriate connections.")
-            if response1 != "YES":
-                remove_player(p1)
-            if response2 != "YES":
-                remove_player(p2)
-            
-    except Exception as e:
-        print(f"[ERROR] Exception during game: {e}")
-        print("[INFO] Closing connections...")
-        remove_player(p1)
-        remove_player(p2)
+    if resp1 == "YES" and resp2 == "YES":
+        print("[INFO] Both want rematch — starting again")
+        handle_match(p1, p2)
+        return
+
+    print("[INFO] Rematch declined by at least one player.")
+    # shut down those who said no
+    for player, resp in ((p1, resp1), (p2, resp2)):
+        if resp != "YES":
+            send_package(player.conn, MessageTypes.SHUTDOWN, "Bye! Thanks for playing.")
+            player.conn.close()
+            with players_lock:
+                players.remove(player) ## may need to change here
+
+    with players_lock:
+        for survivor in players:
+            send_package(survivor.conn, MessageTypes.WAITING, "Waiting for a new opponent...")
+
+def handle_early_exit(p1: Player, p2: Player):
+    """
+    One client bailed mid-match. Figure out who, remove them,
+    and let the other wait for someone new.
+    """
+    for exiting, survivor in ((p1, p2), (p2, p1)):
+        try:
+            send_package(exiting.conn, MessageTypes.S_MESSAGE, "")
+        except:
+            print(f"[INFO] Detected exit of {exiting.addr}")
+            # clean up exit
+            try: exiting.conn.close()
+            except: pass
+            with players_lock:
+                if exiting in players:
+                    players.remove(exiting) ## potential change here
+            send_package(survivor.conn, MessageTypes.WAITING,
+                         "Your opponent disconnected. Waiting for someone new...")
+            return
 
 def main():
-    print(f"[INFO] Server listening on {HOST}:{PORT}")
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    accept_thread = threading.Thread(target=accept_clients,
+                                     args=(s,), daemon=True)
+    accept_thread.start()
 
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        client_connecting_thread = threading.Thread(target=connect_with_clients, args=(s,), daemon=True)
-        client_connecting_thread.start()
+    try:
+        while True:
+            with players_lock:
+                ready = len(players) >= CLIENT_LIMIT
+                if ready:
+                    p1, p2 = players[0], players[1]
+                else:
+                    p1 = p2 = None
 
-        try:
-            while True:
-                if len(players) >= 2:
-                    print(players)
-                    p1 = players[0]
-                    p2 = players[1]
-
-                    print(f"[INFO] Two players ready. Starting game thread.")
-
-                    play_game(p1, p2)
+            if p1 and p2:
+                print("[INFO] Two players ready — launching match thread")
+                handle_match(p1, p2)
+            else:
                 time.sleep(1)
-        except KeyboardInterrupt:
-            print(f"[INFO] Server shutting down.")
+
+    except KeyboardInterrupt:
+        print("[INFO] Server shutting down via Ctrl+C")
+        with players_lock:
+            for p in players:
+                try:
+                    send_package(p.conn, MessageTypes.SHUTDOWN,
+                                 "Server is shutting down.")
+                    p.conn.close()
+                except:
+                    print("[INFO] Was unable to send shutdown message to clients")
+                    pass
+    finally:
+        s.close()
 
 if __name__ == "__main__":
     main()
