@@ -100,7 +100,7 @@ def main():
                     break
 
                 if input_timeout is None:
-                    user_input = console.input("[bold green]>> [/bold green]")
+                    user_input = console.input(">> ")
                 else:
                     try:
                         user_input = inputimeout(">> ", input_timeout)
