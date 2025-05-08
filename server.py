@@ -49,7 +49,6 @@ def accept_clients(s: socket.socket):
                 players.append(player)
                 index = len(players)
             print(f"[INFO] Client {index} connected from {addr}")
-            # If they’re the first of two, tell them to wait
             send_queue_pos()
 
 def handle_match(p1: Player, p2: Player):
@@ -91,7 +90,7 @@ def handle_rematch(p1: Player, p2: Player):
             send_package(player.conn, MessageTypes.SHUTDOWN, "Bye! Thanks for playing.")
             player.conn.close()
             with players_lock:
-                players.remove(player) ## may need to change here
+                remove_player(player) 
 
     with players_lock:
         for survivor in players:
@@ -112,13 +111,14 @@ def handle_early_exit(p1: Player, p2: Player):
             except: pass
             with players_lock:
                 if exiting in players:
-                    players.remove(exiting) ## potential change here
+                    remove_player(exiting)
             send_package(survivor.conn, MessageTypes.WAITING,
                          "Your opponent disconnected. Waiting for someone new...")
             return
 
 def main():
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1) # so that there's no longer a cool down
     accept_thread = threading.Thread(target=accept_clients,
                                      args=(s,), daemon=True)
     accept_thread.start()
@@ -126,10 +126,12 @@ def main():
     try:
         while True:
             with players_lock:
-                ready = len(players) >= CLIENT_LIMIT
+                ready = len(players) >= 2
                 if ready:
+                    print("we are ready")
                     p1, p2 = players[0], players[1]
                 else:
+                    print("we are not ready")
                     p1 = p2 = None
 
             if p1 and p2:
