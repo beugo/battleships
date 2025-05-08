@@ -409,7 +409,7 @@ def run_two_player_game_online(p1_conn, p2_conn):
             send_package(p2_conn, MessageTypes.RESULT, "Opponent quit during ship placement.")
         except:
             pass
-        return "done"
+        return "early_exit"
 
     current_player = 1
 
@@ -433,7 +433,7 @@ def run_two_player_game_online(p1_conn, p2_conn):
         if guess == "QUIT":
             send_package(attacker_conn, MessageTypes.RESULT, "You forfeited the game.")
             send_package(defender_conn, MessageTypes.RESULT, "The other player has forfeited.")
-            return "done"
+            return "early_exit"
 
         try:
             row, col = parse_coordinate(guess)
