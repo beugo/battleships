@@ -17,6 +17,7 @@ global_socket_reference = None
 
 def handle_sigint(signum, frame):
     global running
+    print('\n')
     print_boxed("[INFO] Ctrl+C pressed. Quitting game...", style="yellow")
     try:
         if global_socket_reference:
@@ -55,6 +56,17 @@ def receive_messages(s):
 
             elif type == "waiting":
                 start_spinner(package.get("msg"))
+
+            elif type == "result":
+                print_boxed(package.get("msg"), style="bold magenta")
+                printing_ready.clear()
+            
+            elif type == "quit":
+                print('\n')
+                print_boxed(package.get("msg"), style="red")
+                running = False
+                printing_ready.set()
+                break
 
             else:
                 print_boxed(package.get("msg"), style="cyan")

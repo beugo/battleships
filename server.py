@@ -28,30 +28,32 @@ def connect_with_clients(s: socket.socket):
 
 def play_game(p1: Player, p2: Player):
     try:
-        run_two_player_game_online(p1.conn, p2.conn)
+        result = run_two_player_game_online(p1.conn, p2.conn)
 
-        send_package(p1.conn, MessageTypes.S_MESSAGE, "Game over. Please wait 5 seconds for the next game...")
-        send_package(p2.conn, MessageTypes.S_MESSAGE, "Game over. Please wait 5 seconds for the next game...")
-        time.sleep(5)
+        if result == "done":
+            send_package(p1.conn, MessageTypes.S_MESSAGE, "Game over. Please wait 5 seconds for the next game...")
+            send_package(p2.conn, MessageTypes.S_MESSAGE, "Game over. Please wait 5 seconds for the next game...")
+            time.sleep(5)
 
-        send_package(p1.conn, MessageTypes.PROMPT, "Want to play again ? (yes/no)", None)
-        send_package(p2.conn, MessageTypes.PROMPT, "Want to play again ? (yes/no)", None)
+            send_package(p1.conn, MessageTypes.PROMPT, "Want to play again ? (yes/no)", None)
+            send_package(p2.conn, MessageTypes.PROMPT, "Want to play again ? (yes/no)", None)
 
-        response1 = receive_package(p1.conn).get("coord").upper()
-        response2 = receive_package(p2.conn).get("coord").upper()
+            response1 = receive_package(p1.conn).get("coord").upper()
+            response2 = receive_package(p2.conn).get("coord").upper()
 
-        if response1 == "YES" and response2 == "YES":
-            print("[INFO] Starting game again with the same players.")
-        else:
-            print("[INFO] At least one player has declined. Closing the appropriate connections.")
-            if response1 != "YES":
-                p1.conn.close()
-                players.remove(p1)
-            if response2 != "YES":
-                p2.conn.close()
-                players.remove(p2)
-            for player in players:
-                send_package(player.conn, MessageTypes.S_MESSAGE, "Please wait whilst we find another player...")
+            if response1 == "YES" and response2 == "YES":
+                print("[INFO] Starting game again with the same players.")
+                play_game(p1, p2)
+            else:
+                print("[INFO] At least one player has declined. Closing the appropriate connections.")
+                if response1 != "YES":
+                    p1.conn.close()
+                    players.remove(p1)
+                if response2 != "YES":
+                    p2.conn.close()
+                    players.remove(p2)
+                for player in players:
+                    send_package(player.conn, MessageTypes.S_MESSAGE, "Please wait whilst we find another player...")
 
     except Exception as e:
         print(f"[ERROR] Exception during game: {e}")
@@ -81,6 +83,9 @@ def main():
                     time.sleep(1)
         except KeyboardInterrupt:
             print(f"[INFO] Server shutting down.")
+            send_package(p1.conn, MessageTypes.QUIT, "Server is closing, shutting down all clients...")
+            send_package(p2.conn, MessageTypes.QUIT, "Server is closing, shutting down all clients...")
+
 
 if __name__ == "__main__":
     main()

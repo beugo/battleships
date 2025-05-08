@@ -415,7 +415,7 @@ def run_two_player_game_online(p1_conn, p2_conn):
             send_package(p2_conn, MessageTypes.RESULT, "Opponent quit during ship placement.")
         except:
             pass
-        return
+        return "done"
 
 
     current_player = 1
@@ -431,15 +431,15 @@ def run_two_player_game_online(p1_conn, p2_conn):
         guess = package.get("coord")
 
         if package.get("timeout"):
-            send_package(attacker_conn, MessageTypes.RESULT, "You took too long. Skipping your turn.")
-            send_package(defender_conn, MessageTypes.RESULT, "Opponent time out. It is now your turn.")
+            send_package(attacker_conn, MessageTypes.S_MESSAGE, "You took too long. Skipping your turn.")
+            send_package(defender_conn, MessageTypes.S_MESSAGE, "Opponent time out. It is now your turn.")
             current_player = 2 if current_player == 1 else 1
             continue
 
         if guess.lower() == 'quit':
             send_package(attacker_conn, MessageTypes.RESULT, "You forfeited the game.")
             send_package(defender_conn, MessageTypes.RESULT, "The other player has forfeited.")
-            break
+            return "done"
 
         try:
             row, col = parse_coordinate(guess)
@@ -447,21 +447,21 @@ def run_two_player_game_online(p1_conn, p2_conn):
             send_package(attacker_conn, MessageTypes.BOARD, defender_board, False)
             if result == "hit":
                 if sunk_name:
-                    send_package(attacker_conn, MessageTypes.RESULT, f"HIT! You blew up the {sunk_name}!")
-                    send_package(defender_conn, MessageTypes.RESULT, f"HIT! The other player has blown up your {sunk_name}!")
+                    send_package(attacker_conn, MessageTypes.S_MESSAGE, f"HIT! You blew up the {sunk_name}!")
+                    send_package(defender_conn, MessageTypes.S_MESSAGE, f"HIT! The other player has blown up your {sunk_name}!")
                 else:
-                    send_package(attacker_conn, MessageTypes.RESULT, "HIT!")
-                    send_package(defender_conn, MessageTypes.RESULT, "You were HIT!")
+                    send_package(attacker_conn, MessageTypes.S_MESSAGE, "HIT!")
+                    send_package(defender_conn, MessageTypes.S_MESSAGE, "You were HIT!")
             elif result == "miss":
-                send_package(attacker_conn, MessageTypes.RESULT, "MISS!")
-                send_package(defender_conn, MessageTypes.RESULT, "The attacker MISSED!")
+                send_package(attacker_conn, MessageTypes.S_MESSAGE, "MISS!")
+                send_package(defender_conn, MessageTypes.S_MESSAGE, "The attacker MISSED!")
             elif result == "already_shot":
-                send_package(attacker_conn, MessageTypes.RESULT, "Already fired there.")
+                send_package(attacker_conn, MessageTypes.S_MESSAGE, "Already fired there.")
 
             if defender_board.all_ships_sunk():
                 send_package(attacker_conn, MessageTypes.RESULT, "Congratulations! You win.")
                 send_package(defender_conn, MessageTypes.RESULT, "You lost.")
-                break
+                return "done"
 
             current_player = 2 if current_player == 1 else 1
 

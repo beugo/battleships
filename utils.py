@@ -23,11 +23,12 @@ class Frame:
 
 class MessageTypes(enum.Enum):
     # server -> client
-    RESULT = 1 # forfeit, game win, hit/miss
+    RESULT = 1 # tell client that the current game is over
     BOARD = 2 # board for: placing, playing
     PROMPT = 3 # request for: placing ship, next coordinate
     S_MESSAGE = 4 # for general server to client msgs
     WAITING = 5 # tell client to show spinner
+    QUIT = 6 # tell client to shut down
 
     # client -> server
     COMMAND = 0 # place ship, shoot
@@ -50,13 +51,17 @@ def _build_s_message(msg):
 def _build_waiting(msg):
     return {"type": "waiting", "msg": msg}
 
+def _build_quit(msg):
+    return {"type": "quit", "msg": msg}
+
 _builders = {
     MessageTypes.RESULT: _build_result,
     MessageTypes.BOARD: _build_board,
     MessageTypes.PROMPT: _build_prompt,
     MessageTypes.COMMAND: _build_command,
     MessageTypes.S_MESSAGE: _build_s_message,
-    MessageTypes.WAITING: _build_waiting
+    MessageTypes.WAITING: _build_waiting,
+    MessageTypes.QUIT: _build_quit
 }
 
 def _build_json(type: MessageTypes, *args):
