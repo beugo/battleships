@@ -4,20 +4,20 @@ import time
 from battleship import BOARD_SIZE, Board, run_two_player_game_online
 from utils import *
 
-# ─── Server Configuration ──────────────────────────────────────────────────────
+# ─── Server Configuration ───
 HOST = '127.0.0.1'
 PORT = 5000
 NUM_PLAYERS = 2
 
 players = []
 
-# ─── Player Class ──────────────────────────────────────────────────────────────
+# ─── Player Class ───
 class Player:
     def __init__(self, conn, addr):
         self.conn = conn
         self.addr = addr
 
-# ─── Accept Client Connections ─────────────────────────────────────────────────
+# ─── Accept Client Connections ───
 def connect_with_clients(s: socket.socket):
     s.bind((HOST, PORT))
     s.listen(NUM_PLAYERS)
@@ -31,7 +31,7 @@ def connect_with_clients(s: socket.socket):
             if len(players) < NUM_PLAYERS:
                 send_package(conn, MessageTypes.WAITING, "Waiting for an opponent to connect...")
 
-# ─── Handle Game Lifecycle ─────────────────────────────────────────────────────
+# ─── Handle Game Lifecycle ───
 def play_game(p1: Player, p2: Player):
     try:
         result = run_two_player_game_online(p1.conn, p2.conn)
@@ -49,13 +49,15 @@ def play_game(p1: Player, p2: Player):
 
             if response1 == "YES" and response2 == "YES":
                 print("[INFO] Starting game again with the same players.")
-                play_game(p1, p2)  # recursive replay
+                play_game(p1, p2)
             else:
                 print("[INFO] At least one player declined rematch. Cleaning up.")
                 if response1 != "YES":
+                    send_package(p1.conn, MessageTypes.SHUTDOWN, "Server is shutting down.")
                     p1.conn.close()
                     players.remove(p1)
                 if response2 != "YES":
+                    send_package(p2.conn, MessageTypes.SHUTDOWN, "Server is shutting down.")
                     p2.conn.close()
                     players.remove(p2)
 
@@ -66,13 +68,16 @@ def play_game(p1: Player, p2: Player):
         print(f"[ERROR] Exception during game: {e}")
         print("[INFO] Closing connections...")
 
-        p1.conn.close()
-        p2.conn.close()
+        for player in [p1, p2]:
+            try:
+                send_package(player.conn, MessageTypes.SHUTDOWN, "Server encountered an error. Shutting down.")
+                player.conn.close()
+                if player in players:
+                    players.remove(player)
+            except:
+                pass
 
-        if p1 in players: players.remove(p1)
-        if p2 in players: players.remove(p2)
-
-# ─── Main Server Loop ──────────────────────────────────────────────────────────
+# ─── Main Server Loop ───
 def main():
     print(f"[INFO] Server listening on {HOST}:{PORT}")
 
@@ -94,11 +99,11 @@ def main():
             print("[INFO] Server shutting down.")
             for player in players:
                 try:
-                    send_package(player.conn, MessageTypes.QUIT, "Server is closing, shutting down all clients...")
+                    send_package(player.conn, MessageTypes.SHUTDOWN, "Server is shutting down. Please exit your client.")
                     player.conn.close()
                 except:
                     pass
 
-# ─── Entry Point ───────────────────────────────────────────────────────────────
+# ─── Entry Point ───
 if __name__ == "__main__":
     main()

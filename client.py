@@ -63,7 +63,7 @@ def receive_messages(s):
                 print_boxed(package.get("msg"), style="bold magenta")
                 printing_ready.clear()
 
-            elif msg_type == "quit":
+            elif msg_type == "shutdown":
                 print('\n')
                 print_boxed(package.get("msg"), style="red")
                 running = False
