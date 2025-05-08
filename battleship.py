@@ -306,48 +306,52 @@ def run_single_player_game_locally():
         except ValueError as e:
             print("  >> Invalid input:", e)
 
+def testing_place_ships(board, conn):
 
-# def run_single_player_game_online(rfile, wfile):
-#     """
-#     A test harness for running the single-player game with I/O redirected to socket file objects.
-#     Expects:
-#       - rfile: file-like object to .readline() from client
-#       - wfile: file-like object to .write() back to client
-#     """
-#     board = Board(BOARD_SIZE)
-#     board.place_ships_randomly(SHIPS)
+    TESTING_SHIPS = [
+        ("Dinghy", 2),
+        ("Single Guy in the Water With Some Floaties", 1)
+    ]
 
-#     send("Welcome to Online Single-Player Battleship! Try to sink all the ships. Type 'quit' to exit.")
+    send_package(conn, MessageTypes.S_MESSAGE, "Please place your ships manually on the board.")
+    for ship_name, ship_size in TESTING_SHIPS:
+        while True:
+            send_package(conn, MessageTypes.BOARD, board, True)
+            send_package(conn, MessageTypes.S_MESSAGE, f"Placing your {ship_name} (size {ship_size})")
+            send_package(conn, MessageTypes.PROMPT, "Enter starting coordinate followed by orientation (e.g. A1 V):", None)
+            placement = receive_package(conn).get("coord").strip().upper()
 
-#     moves = 0
-#     while True:
-#         send_board(board)
-#         send("Enter coordinate to fire at (e.g. B5):")
-#         guess = receive()
-#         if guess.lower() == 'quit':
-#             send("Thanks for playing. Goodbye.")
-#             return
+            if placement == "QUIT":
+                raise ConnectionError("Player quit during placement.")
+            
+            try:
+                # split the response
+                pieces = placement.split()
+                if len(pieces) != 2:
+                    raise ValueError("Incorrect format.")
+                coord_str, orientation_str = pieces
 
-#         try:
-#             row, col = parse_coordinate(guess)
-#             result, sunk_name = board.fire_at(row, col)
-#             moves += 1
+                # check the row and column
+                row, col = parse_coordinate(coord_str)
 
-#             if result == 'hit':
-#                 if sunk_name:
-#                     send(f"HIT! You sank the {sunk_name}!")
-#                 else:
-#                     send("HIT!")
-#                 if board.all_ships_sunk():
-#                     send_board(board)
-#                     send(f"Congratulations! You sank all ships in {moves} moves.")
-#                     return
-#             elif result == 'miss':
-#                 send("MISS!")
-#             elif result == 'already_shot':
-#                 send("You've already fired at that location.")
-#         except ValueError as e:
-#             send(f"Invalid input: {e}")
+                # check the orientation
+                if orientation_str not in ("H", "V"):
+                    raise ValueError("Orientation must be either 'H' or 'V'.")
+                orientation = 0 if orientation_str == "H" else 1
+
+            except ValueError as e:
+                send_package(conn, MessageTypes.S_MESSAGE, f"[!] Invalid coordinate: {e}")
+                continue
+
+            if board.can_place_ship(row, col, ship_size, orientation):
+                occupied_positions = board.do_place_ship(row, col, ship_size, orientation)
+                board.placed_ships.append({
+                    'name': ship_name,
+                    'positions': occupied_positions
+                })
+                break
+            else:
+                send_package(conn, MessageTypes.S_MESSAGE, f"[!] Cannot place {ship_name} at {coord_str} (orientation={orientation_str}). Try again.")
 
 def network_place_ships(board, conn):
     send_package(conn, MessageTypes.S_MESSAGE, "Please place your ships manually on the board.")
@@ -396,10 +400,12 @@ def run_two_player_game_online(p1_conn, p2_conn):
 
     try:
         send_package(p2_conn, MessageTypes.WAITING, "Waiting for opponent to place their ships...")
-        network_place_ships(board1, p1_conn)
+        testing_place_ships(board1, p1_conn) # WE MUST NOT FORGET TO GET RID OF THESE BEFORE SUBMITTING!!!!!!!!!!!!!!!!!!!!!!!!!
+        # network_place_ships(board1, p1_conn)
         
         send_package(p1_conn, MessageTypes.WAITING, "Waiting for opponent to place their ships...")
-        network_place_ships(board2, p2_conn)
+        testing_place_ships(board2, p2_conn)
+        # network_place_ships(board2, p2_conn)
     except ConnectionError as e:
         try:
             send_package(p1_conn, MessageTypes.RESULT, "Opponent quit during ship placement.")
@@ -441,8 +447,8 @@ def run_two_player_game_online(p1_conn, p2_conn):
             send_package(attacker_conn, MessageTypes.BOARD, defender_board, False)
             if result == "hit":
                 if sunk_name:
-                    send_package(attacker_conn, MessageTypes.RESULT, f"HIT! You sank the {sunk_name}!")
-                    send_package(defender_conn, MessageTypes.RESULT, f"HIT! The other player has sunk your {sunk_name}!")
+                    send_package(attacker_conn, MessageTypes.RESULT, f"HIT! You blew up the {sunk_name}!")
+                    send_package(defender_conn, MessageTypes.RESULT, f"HIT! The other player has blown up your {sunk_name}!")
                 else:
                     send_package(attacker_conn, MessageTypes.RESULT, "HIT!")
                     send_package(defender_conn, MessageTypes.RESULT, "You were HIT!")
