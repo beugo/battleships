@@ -358,6 +358,9 @@ def network_place_ships(board, conn):
             send_package(conn, MessageTypes.PROMPT, "Enter starting coordinate followed by orientation (e.g. A1 V):", None)
             placement = receive_package(conn).get("coord").strip().upper()
 
+            if placement == "QUIT":
+                raise ConnectionError("Player quit during placement.")
+            
             try:
                 # split the response
                 pieces = placement.split()
@@ -391,11 +394,23 @@ def run_two_player_game_online(p1_conn, p2_conn):
     board1 = Board(BOARD_SIZE)
     board2 = Board(BOARD_SIZE)
 
-    send_package(p2_conn, MessageTypes.WAITING, "Waiting for opponent to place their ships...")
-    network_place_ships(board1, p1_conn)
-    
-    send_package(p1_conn, MessageTypes.WAITING, "Waiting for opponent to place their ships...")
-    network_place_ships(board2, p2_conn)
+    try:
+        send_package(p2_conn, MessageTypes.WAITING, "Waiting for opponent to place their ships...")
+        network_place_ships(board1, p1_conn)
+        
+        send_package(p1_conn, MessageTypes.WAITING, "Waiting for opponent to place their ships...")
+        network_place_ships(board2, p2_conn)
+    except ConnectionError as e:
+        try:
+            send_package(p1_conn, MessageTypes.RESULT, "Opponent quit during ship placement.")
+        except:
+            pass
+        try:
+            send_package(p2_conn, MessageTypes.RESULT, "Opponent quit during ship placement.")
+        except:
+            pass
+        return
+
 
     current_player = 1
     while True:
@@ -403,7 +418,7 @@ def run_two_player_game_online(p1_conn, p2_conn):
         defender_conn = p2_conn if current_player == 1 else p1_conn
         defender_board = board2 if current_player == 1 else board1
 
-        send_package(attacker_conn, MessageTypes.PROMPT, "Enter coordinate to fire at (e.g. B5) or 'quit' to forfeit:", TIMEOUT_DURATION)
+        send_package(attacker_conn, MessageTypes.PROMPT, "Enter coordinate to fire at (e.g. B5) or 'Ctrl + C' to forfeit:", TIMEOUT_DURATION)
         send_package(defender_conn, MessageTypes.WAITING, "Waiting for opponent to fire...")
         
         package = receive_package(attacker_conn)

@@ -1,4 +1,6 @@
+import sys
 import socket
+import signal
 import threading
 from utils import *
 from client_ui import *
@@ -10,6 +12,20 @@ PORT = 5000
 running = True
 printing_ready = threading.Event()
 console = Console()
+
+global_socket_reference = None
+
+def handle_sigint(signum, frame):
+    global running
+    print_boxed("[INFO] Ctrl+C pressed. Quitting game...", style="yellow")
+    try:
+        if global_socket_reference:
+            send_package(global_socket_reference, MessageTypes.COMMAND, "quit", False)
+    except:
+        pass
+    running = False
+    printing_ready.set()
+    sys.exit(0)
 
 def receive_messages(s):
     """Continuously receive and display messages from the server"""
@@ -52,7 +68,12 @@ def receive_messages(s):
 def main():
     global running
 
+    signal.signal(signal.SIGINT, handle_sigint)
+
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+
+        global global_socket_reference
+        global_socket_reference = s
         s.connect((HOST, PORT))
 
         receiving_thread = threading.Thread(target=receive_messages, args=(s,), daemon=True)
@@ -79,13 +100,13 @@ def main():
                 send_package(s, MessageTypes.COMMAND, user_input, False)
 
         except KeyboardInterrupt:
+            print('\n')
             print_boxed("[INFO] Client exiting.", style="yellow")
             running = False
 
         finally:
-            print_boxed("[INFO] Shutting everything down...", style="yellow")
             s.close()
-            print_boxed("[INFO] Client has shut down nice and gracefully.", style="green")
+            print_boxed("[INFO] Client has shut down.", style="green")
 
 if __name__ == "__main__":
     main()

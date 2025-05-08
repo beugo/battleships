@@ -60,6 +60,7 @@ def play_game(p1: Player, p2: Player):
         p2.conn.close()
         if p1 in players: players.remove(p1)
         if p2 in players: players.remove(p2)
+        return
 
 def main():
     print(f"[INFO] Server listening on {HOST}:{PORT}")
@@ -74,11 +75,10 @@ def main():
                 if len(players) >= 2:
                     p1 = players[0]
                     p2 = players[1]
-
                     print(f"[INFO] Two players ready. Starting game thread.")
-
                     play_game(p1, p2)
-                time.sleep(1)
+                else:
+                    time.sleep(1)
         except KeyboardInterrupt:
             print(f"[INFO] Server shutting down.")
 
