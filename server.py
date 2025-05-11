@@ -10,6 +10,7 @@ CLIENT_LIMIT = 5
 
 players = []
 players_lock = threading.Lock()
+running = False
 
 class Player:
     def __init__(self, conn, addr):
@@ -55,6 +56,7 @@ def handle_match(p1: Player, p2: Player):
     Run exactly one match between p1 and p2, then dispatch
     based on how it returned.
     """
+    global running
     for opp1, opp2 in ((p1, p2), (p2, p1)):
         send_package(opp1.conn, MessageTypes.S_MESSAGE, f"Connected. You are playing against: {opp2.addr}") #TODO: We will change this to usernames when we need to.
     result = run_two_player_game_online(p1.conn, p2.conn)
@@ -62,6 +64,7 @@ def handle_match(p1: Player, p2: Player):
         handle_rematch(p1, p2)
     elif result == "early_exit":
         handle_early_exit(p1, p2)
+    running = False
 
 def handle_rematch(p1: Player, p2: Player):
     """
@@ -117,6 +120,7 @@ def handle_early_exit(p1: Player, p2: Player):
             return
 
 def main():
+    global running
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1) # so that there's no longer a cool down
     accept_thread = threading.Thread(target=accept_clients,
@@ -125,20 +129,20 @@ def main():
 
     try:
         while True:
-            with players_lock:
-                ready = len(players) >= 2
-                if ready:
-                    print("we are ready")
-                    p1, p2 = players[0], players[1]
-                else:
-                    print("we are not ready")
-                    p1 = p2 = None
+            if not running:
+                with players_lock:
+                    ready = len(players) >= 2
+                    if ready:
+                        p1, p2 = players[0], players[1]
+                    else:
+                        p1 = p2 = None
 
-            if p1 and p2:
-                print("[INFO] Two players ready — launching match thread")
-                handle_match(p1, p2)
-            else:
-                time.sleep(1)
+                if p1 and p2:
+                    print("[INFO] Two players ready — launching match thread")
+                    game_thread = threading.Thread(target=handle_match, args=(p1, p2), daemon=True)
+                    game_thread.start()
+                    running = True
+            time.sleep(1)
 
     except KeyboardInterrupt:
         print("[INFO] Server shutting down via Ctrl+C")
