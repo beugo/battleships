@@ -128,8 +128,10 @@ def main():
             with players_lock:
                 ready = len(players) >= 2
                 if ready:
+                    print("we are ready")
                     p1, p2 = players[0], players[1]
                 else:
+                    print("we are not ready")
                     p1 = p2 = None
 
             if p1 and p2:
