@@ -384,7 +384,7 @@ def network_place_ships(board, conn):
                 
 
 # ─── MAIN GAME LOGIC ───────────────────────────────────────────────────────────
-def run_two_player_game_online(p1_conn, p2_conn):
+def run_two_player_game_online(p1_conn, p2_conn, spectator_broadcast):
     board1 = Board(BOARD_SIZE)
     board2 = Board(BOARD_SIZE)
 
@@ -443,7 +443,10 @@ def run_two_player_game_online(p1_conn, p2_conn):
             elif result == "already_shot":
                 send_package(attacker_conn, MessageTypes.S_MESSAGE, "Already fired there.")
 
-            if defender_board.all_ships_sunk():
+            ships_sunk = defender_board.all_ships_sunk()
+            spectator_broadcast(board1, board2, result, ships_sunk, attacker_conn)
+
+            if ships_sunk:
                 send_package(attacker_conn, MessageTypes.RESULT, "Congratulations! You win.")
                 send_package(defender_conn, MessageTypes.RESULT, "You lost.")
                 return "done"

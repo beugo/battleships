@@ -37,6 +37,27 @@ def send_queue_pos():
         player = players[i]
         send_package(player.conn, MessageTypes.WAITING, f"You are in position ({i-1}) of the queue to play battleship.")
 
+def spectator_broadcast(board1, board2, result, ships_sunk, attacker):
+    with players_lock:
+        for p in players[:2]:
+            if p.conn == attacker:
+                attacker_address = p.addr
+        spectators = players[2:]
+    for index, s in enumerate(spectators):
+        send_package(s.conn, MessageTypes.S_MESSAGE, "Incoming Live Game Update:")
+        if ships_sunk:
+            send_package(s.conn, MessageTypes.S_MESSAGE, f"{attacker_address} has won.")
+            return
+        send_package(s.conn, MessageTypes.BOARD, board1, False)
+        send_package(s.conn, MessageTypes.BOARD, board2, False)
+        if result == "hit":
+            send_package(s.conn, MessageTypes.S_MESSAGE, f"{attacker_address} has HIT the defender.")
+        elif result == "miss":
+            send_package(s.conn, MessageTypes.S_MESSAGE, f"{attacker_address} has MISSED the defender.")
+        elif result == "already_shot":
+            send_package(s.conn, MessageTypes.S_MESSAGE, f"{attacker_address} has ALREADY SHOT at the defenders position.")
+        send_package(s.conn, MessageTypes.WAITING, f"You are in position ({index + 1}) of the queue to play battleship.")
+        
 def accept_clients(s: socket.socket):
     s.bind((HOST, PORT))
     s.listen()
@@ -51,7 +72,7 @@ def accept_clients(s: socket.socket):
             print(f"[INFO] Client {index} connected from {addr}")
             send_queue_pos()
 
-def handle_match(p1: Player, p2: Player):
+def handle_match(p1: Player, p2: Player, spectator_broadcast):
     """
     Run exactly one match between p1 and p2, then dispatch
     based on how it returned.
@@ -59,7 +80,7 @@ def handle_match(p1: Player, p2: Player):
     global running
     for opp1, opp2 in ((p1, p2), (p2, p1)):
         send_package(opp1.conn, MessageTypes.S_MESSAGE, f"Connected. You are playing against: {opp2.addr}") #TODO: We will change this to usernames when we need to.
-    result = run_two_player_game_online(p1.conn, p2.conn)
+    result = run_two_player_game_online(p1.conn, p2.conn, spectator_broadcast)
     if result == "done":
         handle_rematch(p1, p2)
     elif result == "early_exit":
@@ -92,9 +113,7 @@ def handle_rematch(p1: Player, p2: Player):
     for player, resp in ((p1, resp1), (p2, resp2)):
         if resp != "YES":
             send_package(player.conn, MessageTypes.SHUTDOWN, "Bye! Thanks for playing.")
-            player.conn.close()
-            with players_lock:
-                remove_player(player) 
+            remove_player(player) 
 
     with players_lock:
         for survivor in players:
@@ -139,7 +158,7 @@ def main():
 
                 if p1 and p2:
                     print("[INFO] Two players ready — launching match thread")
-                    game_thread = threading.Thread(target=handle_match, args=(p1, p2), daemon=True)
+                    game_thread = threading.Thread(target=handle_match, args=(p1, p2, spectator_broadcast), daemon=True)
                     game_thread.start()
                     running = True
             time.sleep(1)
