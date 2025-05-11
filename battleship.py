@@ -323,9 +323,6 @@ def testing_place_ships(board, conn):
 
             placement = receive_package(conn).get("coord", "").strip().upper()
 
-            if placement == "QUIT":
-                raise ConnectionError("Player quit during placement.")
-
             try:
                 coord_str, orientation_str = placement.split()
                 row, col = parse_coordinate(coord_str)
@@ -361,9 +358,6 @@ def network_place_ships(board, conn):
             send_package(conn, MessageTypes.PROMPT, "Enter starting coordinate followed by orientation (e.g. A1 V):", None)
 
             placement = receive_package(conn).get("coord", "").strip().upper()
-
-            if placement == "QUIT":
-                raise ConnectionError("Player quit during placement.")
 
             try:
                 coord_str, orientation_str = placement.split()
@@ -403,12 +397,10 @@ def run_two_player_game_online(p1_conn, p2_conn):
     except ConnectionError:
         try:
             send_package(p1_conn, MessageTypes.RESULT, "Opponent quit during ship placement.")
-        except:
-            pass
+        except: pass
         try:
             send_package(p2_conn, MessageTypes.RESULT, "Opponent quit during ship placement.")
-        except:
-            pass
+        except: pass
         return "early_exit"
 
     current_player = 1
@@ -429,11 +421,6 @@ def run_two_player_game_online(p1_conn, p2_conn):
             send_package(defender_conn, MessageTypes.S_MESSAGE, "Opponent time out. It is now your turn.")
             current_player = 2 if current_player == 1 else 1
             continue
-
-        if guess == "QUIT":
-            send_package(attacker_conn, MessageTypes.RESULT, "You forfeited the game.")
-            send_package(defender_conn, MessageTypes.RESULT, "The other player has forfeited.")
-            return "early_exit"
 
         try:
             row, col = parse_coordinate(guess)
