@@ -34,8 +34,7 @@ def send_queue_pos():
         return
     for i in range(2, num_players): # Skip 1st and 2nd player as they are in the game already.
         player = players[i]
-        send_package(player.conn, MessageTypes.S_MESSAGE, f"You are in position ({i-1}) of the queue to play battleship.")
-        send_package(player.conn, MessageTypes.WAITING, "Waiting...")
+        send_package(player.conn, MessageTypes.WAITING, f"You are in position ({i-1}) of the queue to play battleship.")
 
 def accept_clients(s: socket.socket):
     s.bind((HOST, PORT))
@@ -49,7 +48,6 @@ def accept_clients(s: socket.socket):
                 players.append(player)
                 index = len(players)
             print(f"[INFO] Client {index} connected from {addr}")
-            # If they’re the first of two, tell them to wait
             send_queue_pos()
 
 def handle_match(p1: Player, p2: Player):
@@ -57,6 +55,8 @@ def handle_match(p1: Player, p2: Player):
     Run exactly one match between p1 and p2, then dispatch
     based on how it returned.
     """
+    for opp1, opp2 in ((p1, p2), (p2, p1)):
+        send_package(opp1.conn, MessageTypes.S_MESSAGE, f"Connected. You are playing against: {opp2.addr}") #TODO: We will change this to usernames when we need to.
     result = run_two_player_game_online(p1.conn, p2.conn)
     if result == "done":
         handle_rematch(p1, p2)
@@ -91,7 +91,7 @@ def handle_rematch(p1: Player, p2: Player):
             send_package(player.conn, MessageTypes.SHUTDOWN, "Bye! Thanks for playing.")
             player.conn.close()
             with players_lock:
-                players.remove(player) ## may need to change here
+                remove_player(player) 
 
     with players_lock:
         for survivor in players:
@@ -110,15 +110,15 @@ def handle_early_exit(p1: Player, p2: Player):
             # clean up exit
             try: exiting.conn.close()
             except: pass
-            with players_lock:
-                if exiting in players:
-                    players.remove(exiting) ## potential change here
+            if exiting in players:
+                remove_player(exiting)
             send_package(survivor.conn, MessageTypes.WAITING,
                          "Your opponent disconnected. Waiting for someone new...")
             return
 
 def main():
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1) # so that there's no longer a cool down
     accept_thread = threading.Thread(target=accept_clients,
                                      args=(s,), daemon=True)
     accept_thread.start()
@@ -126,7 +126,7 @@ def main():
     try:
         while True:
             with players_lock:
-                ready = len(players) >= CLIENT_LIMIT
+                ready = len(players) >= 2
                 if ready:
                     p1, p2 = players[0], players[1]
                 else:

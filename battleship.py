@@ -431,7 +431,9 @@ def run_two_player_game_online(p1_conn, p2_conn):
             continue
 
         if guess == "QUIT":
-            send_package(attacker_conn, MessageTypes.RESULT, "You forfeited the game.")
+            try:
+                send_package(attacker_conn, MessageTypes.RESULT, "You forfeited the game.")
+            except: pass
             send_package(defender_conn, MessageTypes.RESULT, "The other player has forfeited.")
             return "early_exit"
 

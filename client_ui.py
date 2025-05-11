@@ -10,27 +10,34 @@ import time
 console = Console()
 spinner_active = threading.Event()
 spinner_thread = None
+spinner_msg = "Waiting for opponent..."
 
 def print_boxed(msg, title=None, style="cyan"):
     console.print(Panel(msg, title=title, expand=False, style=style), justify="center")
 
-def spinner_worker(msg):
-    spinner = Spinner("dots", text=msg)
+def create_spinner_render():
+    spinner = Spinner("dots", spinner_msg)
     panel = Panel(spinner, border_style="cyan", expand=False)
     layout = Align.center(panel)
+    return layout
+
+def spinner_worker():
+    layout = create_spinner_render()
 
     with Live(layout, refresh_per_second=10) as live:
         while spinner_active.is_set():
+            live.update(create_spinner_render())
             time.sleep(0.1)
         
         live.update(Align.center(""))
 
 def start_spinner(msg="Waiting for opponent..."):
-    global spinner_thread
+    global spinner_thread, spinner_msg
+    spinner_msg = msg
     if spinner_active.is_set():
         return  # already running
     spinner_active.set()
-    spinner_thread = threading.Thread(target=spinner_worker, args=(msg,), daemon=True)
+    spinner_thread = threading.Thread(target=spinner_worker, daemon=True)
     spinner_thread.start()
 
 def stop_spinner():
