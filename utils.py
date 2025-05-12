@@ -85,18 +85,17 @@ def _recv_exact(s, size):
 
 # ─── Connection-Safe Send Wrapper ──────────────────────────────────────────────
 
-def safe_send(func):
+def detects_lost_connection(func):
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
         try:
             return func(*args, **kwargs)
         except (BrokenPipeError, ConnectionResetError, OSError) as e:
-            raise ConnectionError(f"Connection error while sending: {e}")
+            return "connection_lost"
     return wrapper
 
 # ─── Send and Receive Functions ────────────────────────────────────────────────
 
-@safe_send
 def send_package(s, type: MessageTypes, *args):
     f = Frame()
     f.type = type.value
@@ -115,8 +114,12 @@ def send_package(s, type: MessageTypes, *args):
     f.checksum = zlib.crc32(packed)
     packed = f.pack()
 
-    s.sendall(packed)
-
+    try:
+        s.sendall(packed)
+    except (BrokenPipeError, ConnectionResetError, OSError) as e:
+        # wrap any socket failure as ConnectionError
+        raise ConnectionError(f"send_package failed: {e}")
+    
 def receive_package(s) -> dict:
     f = Frame()
     header = _recv_exact(s, 8)
@@ -129,3 +132,15 @@ def receive_package(s) -> dict:
         raise ValueError("Corrupted packet received.")
 
     return json.loads(f.jsonmsg.decode())
+
+def determine_winner_and_loser(p1, p2):
+    """
+    Probe p1's connection: if it's still good, p1 is the winner; otherwise p2 is.
+    Returns (winner, loser).
+    """
+    try:
+        send_package(p1.conn, MessageTypes.S_MESSAGE, "")
+    except ConnectionError:
+        return p2, p1
+    else:
+        return p1, p2

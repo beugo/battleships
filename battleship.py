@@ -384,24 +384,16 @@ def network_place_ships(board, conn):
                 
 
 # ─── MAIN GAME LOGIC ───────────────────────────────────────────────────────────
+@detects_lost_connection
 def run_two_player_game_online(p1_conn, p2_conn, spectator_broadcast):
     board1 = Board(BOARD_SIZE)
     board2 = Board(BOARD_SIZE)
 
-    try:
-        send_package(p2_conn, MessageTypes.WAITING, "Waiting for opponent to place their ships...")
-        testing_place_ships(board1, p1_conn)  # TODO: replace with network_place_ships before submission
+    send_package(p2_conn, MessageTypes.WAITING, "Waiting for opponent to place their ships...")
+    testing_place_ships(board1, p1_conn)  # TODO: replace with network_place_ships before submission
 
-        send_package(p1_conn, MessageTypes.WAITING, "Waiting for opponent to place their ships...")
-        testing_place_ships(board2, p2_conn)
-    except ConnectionError:
-        try:
-            send_package(p1_conn, MessageTypes.RESULT, "Opponent quit during ship placement.")
-        except: pass
-        try:
-            send_package(p2_conn, MessageTypes.RESULT, "Opponent quit during ship placement.")
-        except: pass
-        return "early_exit"
+    send_package(p1_conn, MessageTypes.WAITING, "Waiting for opponent to place their ships...")
+    testing_place_ships(board2, p2_conn)
 
     current_player = 1
 
@@ -458,5 +450,4 @@ def run_two_player_game_online(p1_conn, p2_conn, spectator_broadcast):
 
 
 if __name__ == "__main__":
-    # Optional: run this file as a script to test single-player mode
     run_single_player_game_locally()
