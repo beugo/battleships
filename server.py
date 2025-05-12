@@ -242,17 +242,25 @@ def main():
                 send_package(
                     winner.conn, 
                     MessageTypes.WAITING, 
-                    "Your opponent has disconnected, please wait for another"
+                    "Your opponent has disconnected, please wait whilst we try to reconnect them."
                 
                 )
-
-                time.sleep(4)
 
                 print(f"[INFO] Removing disconnected player {loser.addr}")
 
                 with t_lock:
                     if loser in player_queue:
                         player_queue.remove(loser)
+
+                found = False
+                for _ in range(0, 30):
+                    if found: break
+                    for p in player_queue:
+                        if p.addr == loser.addr:
+                            player_queue.remove(p)
+                            player_queue.insert(0, p) if p1.addr == loser.addr else player_queue.insert(1, p)
+                            found = True
+                    time.sleep(1)
 
                 continue
 
