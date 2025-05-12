@@ -64,7 +64,7 @@ def start_match(p1: Player, p2: Player) -> str:
     Start a single match between p1 and p2. Returns 'done' or 'early_exit'.
     """
     print(f"[INFO] Starting match between {p1.addr} and {p2.addr}")
-    return run_two_player_game_online(p1.conn, p2.conn, spectator_broadcast)
+    return run_two_player_game_online(p1, p2, spectator_broadcast)
 
 def ask_for_rematch(p: Player) -> str:
     """
@@ -78,14 +78,14 @@ def ask_for_rematch(p: Player) -> str:
         return "NO"
 
 # ─── Announcements ─────────────────────────────────────────────────────
-def send_announcement(msg: str):
+def send_announcement(message_type:MessageTypes, msg: str):
     """
     Broadcast a message to every player in the queue, removing any unreachable.
     """
     with t_lock:
         for player in list(player_queue):
             try:
-                send_package(player.conn, MessageTypes.S_MESSAGE, msg)
+                send_package(player.conn, message_type, msg)
             except ConnectionError:
                 print(f"[INFO] Removing unreachable player {player.addr} from queue")
                 player_queue.remove(player)
@@ -178,7 +178,7 @@ def main():
                 with t_lock:
                     if loser in player_queue:
                         player_queue.remove(loser)
-                        
+
                 continue
 
             # Normal finish: ask both for rematch
@@ -198,7 +198,7 @@ def main():
         running = False
 
         # Notify all waiting/incoming players
-        send_announcement("Server is shutting down.")
+        send_announcement(MessageTypes.S_MESSAGE, "Server is shutting down.")
         # Also notify those not yet in queue
         with t_lock:
             for conn, addr in incoming_connections:

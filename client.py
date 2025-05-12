@@ -45,8 +45,7 @@ def receive_messages(s):
 
             msg_type = package.get("type")
 
-            if msg_type != "waiting":
-                stop_spinner()
+            stop_spinner()
 
             if msg_type == "board":
                 print_board_as_table(package.get("data"))

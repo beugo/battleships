@@ -8,6 +8,7 @@ Contains core data structures and logic for Battleship, including:
 
 """
 
+import time
 import random
 from utils import *
 
@@ -385,21 +386,27 @@ def network_place_ships(board, conn):
 
 # ─── MAIN GAME LOGIC ───────────────────────────────────────────────────────────
 @detects_lost_connection
-def run_two_player_game_online(p1_conn, p2_conn, spectator_broadcast):
+def run_two_player_game_online(p1, p2, spectator_broadcast):
+
+    send_package(p1.conn, MessageTypes.WAITING, f"Starting game between {p1.addr} and {p2.addr}")
+    send_package(p2.conn, MessageTypes.WAITING, f"Starting game between {p1.addr} and {p2.addr}")
+    time.sleep(5)
+
     board1 = Board(BOARD_SIZE)
     board2 = Board(BOARD_SIZE)
 
-    send_package(p2_conn, MessageTypes.WAITING, "Waiting for opponent to place their ships...")
-    testing_place_ships(board1, p1_conn)  # TODO: replace with network_place_ships before submission
 
-    send_package(p1_conn, MessageTypes.WAITING, "Waiting for opponent to place their ships...")
-    testing_place_ships(board2, p2_conn)
+    send_package(p2.conn, MessageTypes.WAITING, "Waiting for opponent to place their ships...")
+    testing_place_ships(board1, p1.conn)  # TODO: replace with network_place_ships before submission
+
+    send_package(p1.conn, MessageTypes.WAITING, "Waiting for opponent to place their ships...")
+    testing_place_ships(board2, p2.conn)
 
     current_player = 1
 
     while True:
-        attacker_conn = p1_conn if current_player == 1 else p2_conn
-        defender_conn = p2_conn if current_player == 1 else p1_conn
+        attacker_conn = p1.conn if current_player == 1 else p2.conn
+        defender_conn = p2.conn if current_player == 1 else p1.conn
         defender_board = board2 if current_player == 1 else board1
 
         send_package(attacker_conn, MessageTypes.PROMPT, "Enter coordinate to fire at (e.g. B5) or 'Ctrl + C' to forfeit:", TIMEOUT_DURATION)
