@@ -45,8 +45,7 @@ def receive_messages(s):
 
             msg_type = package.get("type")
 
-            if msg_type != "waiting":
-                stop_spinner()
+            stop_spinner()
 
             if msg_type == "board":
                 print_board_as_table(package.get("data"))
@@ -66,8 +65,8 @@ def receive_messages(s):
             elif msg_type == "shutdown":
                 print('\n')
                 print_boxed(package.get("msg"), style="red")
-                running = False
                 printing_ready.set()
+                running = False
                 break
 
             else:

@@ -4,159 +4,286 @@ import time
 from battleship import run_two_player_game_online
 from utils import *
 
-HOST = '127.0.0.1'
-PORT = 5000
-CLIENT_LIMIT = 5
-
-players = []
-players_lock = threading.Lock()
+# ─── Shared State ───────────────────────────────────────────────────────────
+incoming_connections = []   # List of (conn, addr)
+player_queue = []           # List of Player instances
+t_lock = threading.Lock()  # Protects both lists
 running = False
 
+# ─── Player Class ────────────────────────────────────────────────────────────
 class Player:
     def __init__(self, conn, addr):
         self.conn = conn
         self.addr = addr
 
-def remove_player(player):
-    with players_lock:
-        if player in players:
-            try:
-                player.conn.close()
-            except:
-                pass
-            players.remove(player)
-            print(f"[INFO] Player {player.addr} has been removed.")
-            send_queue_pos()
-
-def send_queue_pos():
-    num_players = len(players)
-    if num_players == 1:
-        send_package(players[0].conn, MessageTypes.WAITING, "Please wait whilst we find you an opponent.")
-        return
-    for i in range(2, num_players): # Skip 1st and 2nd player as they are in the game already.
-        player = players[i]
-        send_package(player.conn, MessageTypes.WAITING, f"You are in position ({i-1}) of the queue to play battleship.")
-
-def accept_clients(s: socket.socket):
-    s.bind((HOST, PORT))
-    s.listen()
-    print(f"[INFO] Server listening on {HOST}:{PORT}")
-    while True:
-        while len(players) < CLIENT_LIMIT:
-            conn, addr = s.accept()
-            player = Player(conn, addr)
-            with players_lock:
-                players.append(player)
-                index = len(players)
-            print(f"[INFO] Client {index} connected from {addr}")
-            send_queue_pos()
-
-def handle_match(p1: Player, p2: Player):
+# ─── Receiver Thread ─────────────────────────────────────────────────────────
+def receiver_thread(server_sock):
     """
-    Run exactly one match between p1 and p2, then dispatch
-    based on how it returned.
+    Accept new connections and append them to incoming_connections.
     """
     global running
-    for opp1, opp2 in ((p1, p2), (p2, p1)):
-        send_package(opp1.conn, MessageTypes.S_MESSAGE, f"Connected. You are playing against: {opp2.addr}") #TODO: We will change this to usernames when we need to.
-    result = run_two_player_game_online(p1.conn, p2.conn)
-    if result == "done":
-        handle_rematch(p1, p2)
-    elif result == "early_exit":
-        handle_early_exit(p1, p2)
-    running = False
-
-def handle_rematch(p1: Player, p2: Player):
-    """
-    Ask both players if they want a rematch.
-    If both say YES, recurse back into handle_match.
-    Otherwise shut down any 'no' players and leave
-    survivors in the lobby.
-    """
-    time.sleep(3)
-
-    # ask each
-    send_package(p1.conn, MessageTypes.PROMPT, "Want to play again? (yes/no)", None)
-    send_package(p2.conn, MessageTypes.PROMPT, "Want to play again? (yes/no)", None)
-
-    resp1 = receive_package(p1.conn).get("coord", "").strip().upper() # need to account for client disconnecting here
-    resp2 = receive_package(p2.conn).get("coord", "").strip().upper()
-
-    if resp1 == "YES" and resp2 == "YES":
-        print("[INFO] Both want rematch — starting again")
-        handle_match(p1, p2)
-        return
-
-    print("[INFO] Rematch declined by at least one player.")
-    # shut down those who said no
-    for player, resp in ((p1, resp1), (p2, resp2)):
-        if resp != "YES":
-            send_package(player.conn, MessageTypes.SHUTDOWN, "Bye! Thanks for playing.")
-            player.conn.close()
-            with players_lock:
-                remove_player(player) 
-
-    with players_lock:
-        for survivor in players:
-            send_package(survivor.conn, MessageTypes.WAITING, "Waiting for a new opponent...")
-
-def handle_early_exit(p1: Player, p2: Player):
-    """
-    One client bailed mid-match. Figure out who, remove them,
-    and let the other wait for someone new.
-    """
-    for exiting, survivor in ((p1, p2), (p2, p1)):
+    while running:
         try:
-            send_package(exiting.conn, MessageTypes.S_MESSAGE, "")
-        except:
-            print(f"[INFO] Detected exit of {exiting.addr}")
-            # clean up exit
-            try: exiting.conn.close()
-            except: pass
-            if exiting in players:
-                remove_player(exiting)
-            send_package(survivor.conn, MessageTypes.WAITING,
-                         "Your opponent disconnected. Waiting for someone new...")
-            return
+            conn, addr = server_sock.accept()
+            with t_lock:
+                incoming_connections.append((conn, addr))
+            print(f"[INFO] New connection from {addr}")
+        except OSError:
+            break
 
+# ─── Queue Maintainer Thread ─────────────────────────────────────────────────
+def queue_maintainer_thread():
+    """
+    Move sockets from incoming_connections into the player_queue for matching.
+    """
+    global running
+    while running:
+        with t_lock:
+            if incoming_connections:
+                conn, addr = incoming_connections.pop(0)
+                player = Player(conn, addr)
+
+                try:
+                    send_package(
+                        player.conn,
+                        MessageTypes.WAITING,
+                        f"You are number {len(player_queue) + 1} in the queue"
+                    )
+                except (BrokenPipeError, ConnectionResetError, OSError) as e:
+                    print(f"[INFO] Player at {addr} has disconnected before joining the queue")
+                    continue
+                
+                player_queue.append(player)
+                print(f"[INFO] Added {addr} to player_queue (position {len(player_queue)})")
+                
+        time.sleep(0.5)
+
+# ─── Match & Rematch Logic ───────────────────────────────────────────────────
+def start_match(p1: Player, p2: Player) -> str:
+    """
+    Start a single match between p1 and p2. Returns 'done' or 'early_exit'.
+    """
+
+    game_starting_message = f"Starting match between {p1.addr} and {p2.addr}"
+
+    print("[INFO] " + game_starting_message)
+    send_announcement(MessageTypes.WAITING, game_starting_message)
+
+    return run_two_player_game_online(p1, p2, notify_spectators)
+
+def ask_for_rematch(p1: Player, p2: Player, timeout: float = 15.0) -> tuple[str, str]:
+    """
+    Prompt p1 and p2 simultaneously for a rematch.
+    Each has `timeout` seconds to reply with "YES" or "NO".
+    As soon as one replies, they get a WAITING message.
+    Any socket error or timeout yields "NO".
+    Returns (resp1, resp2) in uppercase.
+    """
+    players = [p1, p2]
+    responses = {p1: "NO", p2: "NO"}
+
+    for p in players:
+        try:
+            send_package(
+                p.conn,
+                MessageTypes.PROMPT,
+                "Want to play again? (yes/no)",
+                None
+            )
+        except ConnectionError:
+            print(f"[INFO] Could not prompt {p.addr}, defaulting to NO")
+
+    start = time.time()
+
+    for p in players:
+        remaining = timeout - (time.time() - start)
+        if remaining <= 0:
+            continue
+
+        p.conn.settimeout(remaining)
+        try:
+            pkg = receive_package(p.conn)
+            resp = pkg.get("coord", "").strip().upper()
+            if resp not in ("YES", "NO"):
+                resp = "NO"
+        except socket.timeout:
+            resp = "NO"
+        except ConnectionError:
+            resp = "NO"
+        finally:
+            # restore blocking mode
+            p.conn.settimeout(None)
+
+        responses[p] = resp
+
+        try:
+            send_package(
+                p.conn,
+                MessageTypes.WAITING,
+                "Waiting for your opponent to decide..."
+            )
+        except ConnectionError:
+            pass
+
+    return (responses[p1], responses[p2])
+
+# ─── Announcements ─────────────────────────────────────────────────────
+def send_announcement(message_type:MessageTypes, msg: str):
+    """
+    Broadcast a message to every player in the queue, removing any unreachable.
+    """
+    with t_lock:
+        for player in list(player_queue):
+            try:
+                send_package(player.conn, message_type, msg)
+            except ConnectionError:
+                print(f"[INFO] Removing unreachable player {player.addr} from queue")
+                player_queue.remove(player)
+
+def notify_spectators(defender_board, result, ships_sunk, attacker):
+    """
+    Send live updates to any spectators waiting beyond the first two in queue.
+
+    - If ships_sunk is True, announce victory and return immediately.
+    - If result == "timeout", tell them whose turn was skipped.
+    - Otherwise (hit/miss/already_shot), announce the event.
+    - In all non-end cases, send the defender's updated board next.
+    - Finally, send a WAITING spinner message with their queue position.
+    """
+    with t_lock:
+        spectators = player_queue[2:]
+
+    for idx, spec in enumerate(spectators, start=1):
+        try:
+            # 1) Header
+            send_package(spec.conn, MessageTypes.S_MESSAGE, "Incoming Live Game Update:")
+
+            # 2) End-of-game?
+            if ships_sunk:
+                send_package(
+                    spec.conn,
+                    MessageTypes.S_MESSAGE,
+                    f"{attacker.addr} has won!"
+                )
+                return
+
+            # 3) Timeout
+            if result == "timeout":
+                send_package(
+                    spec.conn,
+                    MessageTypes.S_MESSAGE,
+                    f"{attacker.addr} timed out; turn skipped."
+                )
+            else:
+                # 4) Hit / Miss / Already shot
+                verb = {
+                    "hit": "has HIT the defender.",
+                    "miss": "has MISSED the defender.",
+                    "already_shot": "has ALREADY SHOT at the defender."
+                }.get(result)
+                if verb:
+                    send_package(
+                        spec.conn,
+                        MessageTypes.S_MESSAGE,
+                        f"{attacker.addr} {verb}"
+                    )
+
+            # 5) Send the defender's updated board
+            if defender_board is not None:
+                send_package(spec.conn, MessageTypes.BOARD, defender_board, False)
+
+            # 6) Spinner / queue position
+            send_package(
+                spec.conn,
+                MessageTypes.WAITING,
+                f"You are number {idx + 2} in the queue"
+            )
+
+        except ConnectionError:
+            with t_lock:
+                if spec in player_queue:
+                    player_queue.remove(spec)
+
+# ─── Main Server Loop ─────────────────────────────────────────────────────────
 def main():
     global running
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1) # so that there's no longer a cool down
-    accept_thread = threading.Thread(target=accept_clients,
-                                     args=(s,), daemon=True)
-    accept_thread.start()
+
+    # Set up listening socket
+    server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    server_sock.bind(( '127.0.0.1', 5000 ))
+    server_sock.listen()
+
+    running = True
+    print("[INFO] Server started, listening for connections...")
+
+    # Start helper threads
+    threading.Thread(target=receiver_thread, args=(server_sock,), daemon=True).start()
+    threading.Thread(target=queue_maintainer_thread, daemon=True).start()
 
     try:
-        while True:
-            if not running:
-                with players_lock:
-                    ready = len(players) >= 2
-                    if ready:
-                        p1, p2 = players[0], players[1]
-                    else:
-                        p1 = p2 = None
+        while running:
+            with t_lock:
+                if len(player_queue) >= 2:
+                    p1, p2 = player_queue[0], player_queue[1]
+                else:
+                    p1 = p2 = None
 
-                if p1 and p2:
-                    print("[INFO] Two players ready — launching match thread")
-                    game_thread = threading.Thread(target=handle_match, args=(p1, p2), daemon=True)
-                    game_thread.start()
-                    running = True
-            time.sleep(1)
+            if not (p1 and p2):
+                time.sleep(1)
+                continue
+
+            # Play a match
+            result = start_match(p1, p2)
+
+            if result == "connection_lost":
+                winner, loser = determine_winner_and_loser(p1, p2)
+
+                send_package(
+                    winner.conn, 
+                    MessageTypes.WAITING, 
+                    "Your opponent has disconnected, please wait for another"
+                
+                )
+
+                time.sleep(4)
+
+                print(f"[INFO] Removing disconnected player {loser.addr}")
+
+                with t_lock:
+                    if loser in player_queue:
+                        player_queue.remove(loser)
+
+                continue
+
+            r1, r2 = ask_for_rematch(p1, p2)
+            with t_lock:
+                if r1 != "YES" and p1 in player_queue:
+                    player_queue.remove(p1)
+                if r2 != "YES" and p2 in player_queue:
+                    player_queue.remove(p2)
+
+            send_announcement(MessageTypes.WAITING, "A new game will start soon!")
+            time.sleep(3)
 
     except KeyboardInterrupt:
-        print("[INFO] Server shutting down via Ctrl+C")
-        with players_lock:
-            for p in players:
+        print("[INFO] Ctrl+C received. Shutting down...")
+        running = False
+
+        # Notify all waiting/incoming players
+        send_announcement(MessageTypes.SHUTDOWN, "Server is shutting down.")
+        # Also notify those not yet in queue
+        with t_lock:
+            for conn, addr in incoming_connections:
                 try:
-                    send_package(p.conn, MessageTypes.SHUTDOWN,
-                                 "Server is shutting down.")
-                    p.conn.close()
+                    send_package(conn, MessageTypes.SHUTDOWN, "Server is shutting down.")
+                    conn.close()
                 except:
-                    print("[INFO] Was unable to send shutdown message to clients")
                     pass
+
     finally:
-        s.close()
+        server_sock.close()
+        print("[INFO] Server socket closed. Exiting.")
 
 if __name__ == "__main__":
     main()
