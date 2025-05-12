@@ -42,8 +42,16 @@ def queue_maintainer_thread():
             if incoming_connections:
                 conn, addr = incoming_connections.pop(0)
                 player = Player(conn, addr)
+
+                try: 
+                    send_package(player.conn, MessageTypes.WAITING, f"You have been added to the player queue at position {len(player_queue)}")
+                except (BrokenPipeError, ConnectionResetError, OSError) as e:
+                    print(f"[INFO] Player at {addr} has disconnected")
+                    continue
+                
                 player_queue.append(player)
                 print(f"[INFO] Added {addr} to player_queue (position {len(player_queue)})")
+                
         time.sleep(0.5)
 
 # ─── Match & Rematch Logic ───────────────────────────────────────────────────
@@ -55,17 +63,17 @@ def start_match(p1: Player, p2: Player) -> str:
     print(f"[INFO] Starting match between {p1.addr} and {p2.addr}")
     return run_two_player_game_online(p1.conn, p2.conn, spectator_broadcast)
 
-@safe_send
-def ask_for_rematch(p1: Player, p2: Player) -> tuple:
+def ask_for_rematch(p: Player):
     """
-    Ask both players if they want a rematch. Returns (resp1, resp2).
+    Ask both players if they want a rematch. Returns (resp).
     """
-    send_package(p1.conn, MessageTypes.PROMPT, "Want to play again? (yes/no)", None)
-    send_package(p2.conn, MessageTypes.PROMPT, "Want to play again? (yes/no)", None)
+    try:
+        send_package(p.conn, MessageTypes.PROMPT, "Want to play again? (yes/no)", None)
+        resp1 = receive_package(p.conn).get("coord", "").strip().upper()
+    except (BrokenPipeError, ConnectionResetError, OSError):
+        resp1 = "NO"
 
-    resp1 = receive_package(p1.conn).get("coord", "").strip().upper()
-    resp2 = receive_package(p2.conn).get("coord", "").strip().upper()
-    return resp1, resp2
+    return resp1
 
 # ─── Announcements ─────────────────────────────────────────────────────
 def send_announcement(msg: str):
@@ -159,7 +167,7 @@ def main():
                     continue
 
             # Normal finish: ask for rematch
-            resp1, resp2 = ask_for_rematch(p1, p2)
+            resp1, resp2 = ask_for_rematch(p1), ask_for_rematch(p2)
             to_remove = []
             if resp1 != "YES":
                 to_remove.append(p1)
