@@ -66,16 +66,61 @@ def start_match(p1: Player, p2: Player) -> str:
     print(f"[INFO] Starting match between {p1.addr} and {p2.addr}")
     return run_two_player_game_online(p1, p2, spectator_broadcast)
 
-def ask_for_rematch(p: Player) -> str:
+def ask_for_rematch(p1: Player, p2: Player, timeout: float = 15.0) -> tuple[str, str]:
     """
-    Ask both players if they want a rematch. Returns (resp).
+    Prompt p1 and p2 simultaneously for a rematch.
+    Each has `timeout` seconds to reply with "YES" or "NO".
+    As soon as one replies, they get a WAITING message.
+    Any socket error or timeout yields "NO".
+    Returns (resp1, resp2) in uppercase.
     """
-    try:
-        send_package(p.conn, MessageTypes.PROMPT, "Want to play again? (yes/no)", None)
-        response = receive_package(p.conn).get("coord", "").strip().upper()
-        return response
-    except (BrokenPipeError, ConnectionResetError, OSError):
-        return "NO"
+    players = [p1, p2]
+    responses = {p1: "NO", p2: "NO"}
+
+    for p in players:
+        try:
+            send_package(
+                p.conn,
+                MessageTypes.PROMPT,
+                "Want to play again? (yes/no)",
+                None
+            )
+        except ConnectionError:
+            print(f"[INFO] Could not prompt {p.addr}, defaulting to NO")
+
+    start = time.time()
+
+    for p in players:
+        remaining = timeout - (time.time() - start)
+        if remaining <= 0:
+            continue
+
+        p.conn.settimeout(remaining)
+        try:
+            pkg = receive_package(p.conn)
+            resp = pkg.get("coord", "").strip().upper()
+            if resp not in ("YES", "NO"):
+                resp = "NO"
+        except socket.timeout:
+            resp = "NO"
+        except ConnectionError:
+            resp = "NO"
+        finally:
+            # restore blocking mode
+            p.conn.settimeout(None)
+
+        responses[p] = resp
+
+        try:
+            send_package(
+                p.conn,
+                MessageTypes.WAITING,
+                "Waiting for your opponent to decide..."
+            )
+        except ConnectionError:
+            pass
+
+    return (responses[p1], responses[p2])
 
 # ─── Announcements ─────────────────────────────────────────────────────
 def send_announcement(message_type:MessageTypes, msg: str):
@@ -173,6 +218,9 @@ def main():
                     "Your opponent has disconnected, please wait for another"
                 
                 )
+
+                time.sleep(4)
+
                 print(f"[INFO] Removing disconnected player {loser.addr}")
 
                 with t_lock:
@@ -182,7 +230,7 @@ def main():
                 continue
 
             # Normal finish: ask both for rematch
-            r1, r2 = ask_for_rematch(p1), ask_for_rematch(p2)
+            r1, r2 = ask_for_rematch(p1, p2)
             with t_lock:
                 if r1 != "YES" and p1 in player_queue:
                     player_queue.remove(p1)
@@ -190,7 +238,7 @@ def main():
                     player_queue.remove(p2)
 
             send_announcement(MessageTypes.WAITING, "A new game will start soon!")
-            time.sleep(1)
+            time.sleep(3)
 
     except KeyboardInterrupt:
         print("[INFO] Ctrl+C received. Shutting down...")
