@@ -198,7 +198,7 @@ def main():
         running = False
 
         # Notify all waiting/incoming players
-        send_announcement(MessageTypes.S_MESSAGE, "Server is shutting down.")
+        send_announcement(MessageTypes.SHUTDOWN, "Server is shutting down.")
         # Also notify those not yet in queue
         with t_lock:
             for conn, addr in incoming_connections:

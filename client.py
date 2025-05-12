@@ -65,8 +65,8 @@ def receive_messages(s):
             elif msg_type == "shutdown":
                 print('\n')
                 print_boxed(package.get("msg"), style="red")
-                running = False
                 printing_ready.set()
+                running = False
                 break
 
             else:
