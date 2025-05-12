@@ -3,6 +3,9 @@ import struct
 import json
 import enum
 import zlib
+import functools
+
+# ─── Frame Class ───────────────────────────────────────────────────────────────
 
 class Frame:
     def __init__(self):
@@ -12,47 +15,35 @@ class Frame:
         self.jsonmsg = b''
 
     def pack(self):
-        # H - unsigned short (2 bytes)
-        # I - unsigned int (4 bytes)
-        # {size}s - char[] (variable bytes according to size)
-
+        # H = unsigned short (2 bytes), I = unsigned int (4 bytes), s = string of length jsonmsg
         return struct.pack(f'HHI{len(self.jsonmsg)}s', self.type, self.length, self.checksum, self.jsonmsg)
-    
+
     def unpack_header(self, header):
         self.type, self.length, self.checksum = struct.unpack_from('HHI', header)
 
+# ─── Message Types ─────────────────────────────────────────────────────────────
+
 class MessageTypes(enum.Enum):
     # server -> client
-    RESULT = 1 # tell client that the current game is over
-    BOARD = 2 # board for: placing, playing
-    PROMPT = 3 # request for: placing ship, next coordinate
-    S_MESSAGE = 4 # for general server to client msgs
-    WAITING = 5 # tell client to show spinner
-    SHUTDOWN = 6 # tell client to shut down
+    RESULT = 1      # Game over
+    BOARD = 2       # Board state (for placing or playing)
+    PROMPT = 3      # Input request (e.g., place ship, fire)
+    S_MESSAGE = 4   # General server messages
+    WAITING = 5     # Show spinner / wait screen
+    SHUTDOWN = 6    # Tell client to shut down
 
     # client -> server
-    COMMAND = 0 # place ship, shoot
+    COMMAND = 0     # Send input (e.g., fire, place ship)
 
-def _build_result(msg: str):
-    return {"type": "result", "msg": msg}
+# ─── Message Builders ──────────────────────────────────────────────────────────
 
-def _build_board(show_ships: bool, board):
-    return {"type": "board", "ships": show_ships, "data": board}
-
-def _build_prompt(msg, timeout):
-    return {"type": "prompt", "timeout": timeout, "msg": msg}
-
-def _build_command(data, timed_out: bool):
-    return {"type": "command", "timeout": timed_out, "coord": data}
-
-def _build_s_message(msg):
-    return {"type": "s_msg", "msg": msg}
-
-def _build_waiting(msg):
-    return {"type": "waiting", "msg": msg}
-
-def _build_shutdown(msg):
-    return {"type": "shutdown", "msg": msg}
+def _build_result(msg): return {"type": "result", "msg": msg}
+def _build_board(show_ships, board): return {"type": "board", "ships": show_ships, "data": board}
+def _build_prompt(msg, timeout): return {"type": "prompt", "timeout": timeout, "msg": msg}
+def _build_command(data, timed_out): return {"type": "command", "timeout": timed_out, "coord": data}
+def _build_s_message(msg): return {"type": "s_msg", "msg": msg}
+def _build_waiting(msg): return {"type": "waiting", "msg": msg}
+def _build_shutdown(msg): return {"type": "shutdown", "msg": msg}
 
 _builders = {
     MessageTypes.RESULT: _build_result,
@@ -61,30 +52,28 @@ _builders = {
     MessageTypes.COMMAND: _build_command,
     MessageTypes.S_MESSAGE: _build_s_message,
     MessageTypes.WAITING: _build_waiting,
-    MessageTypes.SHUTDOWN: _build_shutdown
+    MessageTypes.SHUTDOWN: _build_shutdown,
 }
 
 def _build_json(type: MessageTypes, *args):
     return _builders[type](*args)
 
+# ─── Board Creation ────────────────────────────────────────────────────────────
+
 def _create_board(board, setup=False):
-    output = []
-    output.append("  " + " ".join(str(i + 1).rjust(2) for i in range(board.size)) + '\n')
+    output = ["  " + " ".join(str(i + 1).rjust(2) for i in range(board.size)) + '\n']
     for r in range(board.size):
         row_label = chr(ord('A') + r)
-
-        if setup:
-            row_str = " ".join(board.hidden_grid[r][c] for c in range(board.size))
-        else:
-            row_str = " ".join(board.display_grid[r][c] for c in range(board.size))
-
+        row_str = " ".join(
+            board.hidden_grid[r][c] if setup else board.display_grid[r][c]
+            for c in range(board.size)
+        )
         output.append(f"{row_label:2} {row_str}\n")
     output.append('\n')
     return "".join(output)
 
-# recv(s) returns up to s bytes (not guarenteed).
-# this is not ideal as we need to ensure each frame is complete and whole - excluding everything else that may or may not follow.
-# we therefore need to place each read of recv into a buffer until we have the size we are expecting (function below).
+# ─── Reliable Receive ──────────────────────────────────────────────────────────
+
 def _recv_exact(s, size):
     buffer = b''
     while len(buffer) < size:
@@ -94,18 +83,27 @@ def _recv_exact(s, size):
         buffer += block
     return buffer
 
+# ─── Connection-Safe Send Wrapper ──────────────────────────────────────────────
+
+def safe_send(func):
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except (BrokenPipeError, ConnectionResetError, OSError) as e:
+            raise ConnectionError(f"Connection error while sending: {e}")
+    return wrapper
+
+# ─── Send and Receive Functions ────────────────────────────────────────────────
+
+@safe_send
 def send_package(s, type: MessageTypes, *args):
-    """
-    s = socket object of the individual you want to send to.
-    """
     f = Frame()
     f.type = type.value
 
-    if type == MessageTypes.BOARD: # Special case for when we are sending a board.
-        board_obj = args[0]
-        show_ships = args[1]
-
-        board_string = _create_board(board_obj, show_ships) 
+    if type == MessageTypes.BOARD:
+        board_obj, show_ships = args
+        board_string = _create_board(board_obj, show_ships)
         json_dict = _build_json(type, show_ships, board_string)
     else:
         json_dict = _build_json(type, *args)
@@ -120,18 +118,14 @@ def send_package(s, type: MessageTypes, *args):
     s.sendall(packed)
 
 def receive_package(s) -> dict:
-    """
-    s = socket object of the individual you are receiving from.
-    """
     f = Frame()
-    header = _recv_exact(s, 8) # 8 bytes is the size of our header.
+    header = _recv_exact(s, 8)
     f.unpack_header(header)
     f.jsonmsg = _recv_exact(s, f.length)
 
-    # TODO:
-    checksum = f.checksum
+    expected_checksum = f.checksum
     f.checksum = 0
-    if (checksum != zlib.crc32(f.pack())):
-        pass
-    
+    if expected_checksum != zlib.crc32(f.pack()):
+        raise ValueError("Corrupted packet received.")
+
     return json.loads(f.jsonmsg.decode())
