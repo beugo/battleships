@@ -386,11 +386,7 @@ def network_place_ships(board, conn):
 
 # ─── MAIN GAME LOGIC ───────────────────────────────────────────────────────────
 @detects_lost_connection
-def run_two_player_game_online(p1, p2, spectator_broadcast):
-
-    send_package(p1.conn, MessageTypes.WAITING, f"Starting game between {p1.addr} and {p2.addr}")
-    send_package(p2.conn, MessageTypes.WAITING, f"Starting game between {p1.addr} and {p2.addr}")
-    time.sleep(5)
+def run_two_player_game_online(p1, p2, notify_spectators):
 
     board1 = Board(BOARD_SIZE)
     board2 = Board(BOARD_SIZE)
@@ -405,18 +401,18 @@ def run_two_player_game_online(p1, p2, spectator_broadcast):
     current_player = 1
 
     while True:
-        attacker_conn = p1.conn if current_player == 1 else p2.conn
+        attacker = p1 if current_player == 1 else p2
         defender_conn = p2.conn if current_player == 1 else p1.conn
         defender_board = board2 if current_player == 1 else board1
 
-        send_package(attacker_conn, MessageTypes.PROMPT, "Enter coordinate to fire at (e.g. B5) or 'Ctrl + C' to forfeit:", TIMEOUT_DURATION)
+        send_package(attacker.conn, MessageTypes.PROMPT, "Enter coordinate to fire at (e.g. B5) or 'Ctrl + C' to forfeit:", TIMEOUT_DURATION)
         send_package(defender_conn, MessageTypes.WAITING, "Waiting for opponent to fire...")
 
-        package = receive_package(attacker_conn)
+        package = receive_package(attacker.conn)
         guess = package.get("coord", "").strip().upper()
 
         if package.get("timeout"):
-            send_package(attacker_conn, MessageTypes.S_MESSAGE, "You took too long. Skipping your turn.")
+            send_package(attacker.conn, MessageTypes.S_MESSAGE, "You took too long. Skipping your turn.")
             send_package(defender_conn, MessageTypes.S_MESSAGE, "Opponent time out. It is now your turn.")
             current_player = 2 if current_player == 1 else 1
             continue
@@ -425,35 +421,35 @@ def run_two_player_game_online(p1, p2, spectator_broadcast):
             row, col = parse_coordinate(guess)
             result, sunk_name = defender_board.fire_at(row, col)
 
-            send_package(attacker_conn, MessageTypes.BOARD, defender_board, False)
+            send_package(attacker.conn, MessageTypes.BOARD, defender_board, False)
 
             if result == "hit":
                 if sunk_name:
-                    send_package(attacker_conn, MessageTypes.S_MESSAGE, f"HIT! You blew up the {sunk_name}!")
+                    send_package(attacker.conn, MessageTypes.S_MESSAGE, f"HIT! You blew up the {sunk_name}!")
                     send_package(defender_conn, MessageTypes.S_MESSAGE, f"HIT! The other player has blown up your {sunk_name}!")
                 else:
-                    send_package(attacker_conn, MessageTypes.S_MESSAGE, "HIT!")
+                    send_package(attacker.conn, MessageTypes.S_MESSAGE, "HIT!")
                     send_package(defender_conn, MessageTypes.S_MESSAGE, "You were HIT!")
 
             elif result == "miss":
-                send_package(attacker_conn, MessageTypes.S_MESSAGE, "MISS!")
+                send_package(attacker.conn, MessageTypes.S_MESSAGE, "MISS!")
                 send_package(defender_conn, MessageTypes.S_MESSAGE, "The attacker MISSED!")
 
             elif result == "already_shot":
-                send_package(attacker_conn, MessageTypes.S_MESSAGE, "Already fired there.")
+                send_package(attacker.conn, MessageTypes.S_MESSAGE, "Already fired there.")
 
             ships_sunk = defender_board.all_ships_sunk()
-            spectator_broadcast(board1, board2, result, ships_sunk, attacker_conn)
+            notify_spectators(defender_board, result, ships_sunk, attacker)
 
             if ships_sunk:
-                send_package(attacker_conn, MessageTypes.RESULT, "Congratulations! You win.")
+                send_package(attacker.conn, MessageTypes.RESULT, "Congratulations! You win.")
                 send_package(defender_conn, MessageTypes.RESULT, "You lost.")
                 return "done"
 
             current_player = 2 if current_player == 1 else 1
 
         except Exception as e:
-            send_package(attacker_conn, MessageTypes.S_MESSAGE, f"Invalid input: {e}")
+            send_package(attacker.conn, MessageTypes.S_MESSAGE, f"Invalid input: {e}")
 
 
 if __name__ == "__main__":

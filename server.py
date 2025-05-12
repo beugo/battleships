@@ -63,8 +63,13 @@ def start_match(p1: Player, p2: Player) -> str:
     """
     Start a single match between p1 and p2. Returns 'done' or 'early_exit'.
     """
-    print(f"[INFO] Starting match between {p1.addr} and {p2.addr}")
-    return run_two_player_game_online(p1, p2, spectator_broadcast)
+
+    game_starting_message = f"Starting match between {p1.addr} and {p2.addr}"
+
+    print("[INFO] " + game_starting_message)
+    send_announcement(MessageTypes.WAITING, game_starting_message)
+
+    return run_two_player_game_online(p1, p2, notify_spectators)
 
 def ask_for_rematch(p1: Player, p2: Player, timeout: float = 15.0) -> tuple[str, str]:
     """
@@ -135,46 +140,69 @@ def send_announcement(message_type:MessageTypes, msg: str):
                 print(f"[INFO] Removing unreachable player {player.addr} from queue")
                 player_queue.remove(player)
 
-def spectator_broadcast(board1, board2, result, ships_sunk, attacker_conn):
+def notify_spectators(defender_board, result, ships_sunk, attacker):
     """
     Send live updates to any spectators waiting beyond the first two in queue.
+
+    - If ships_sunk is True, announce victory and return immediately.
+    - If result == "timeout", tell them whose turn was skipped.
+    - Otherwise (hit/miss/already_shot), announce the event.
+    - In all non-end cases, send the defender's updated board next.
+    - Finally, send a WAITING spinner message with their queue position.
     """
     with t_lock:
-        # get current players for addr lookup
-        active = player_queue[:2]
-    # determine attacker address
-    attacker_addr = next((p.addr for p in active if p.conn == attacker_conn), None)
-    spectators = []
-    with t_lock:
-        if len(player_queue) > 2:
-            spectators = player_queue[2:]
+        spectators = player_queue[2:]
 
     for idx, spec in enumerate(spectators, start=1):
         try:
+            # 1) Header
             send_package(spec.conn, MessageTypes.S_MESSAGE, "Incoming Live Game Update:")
+
+            # 2) End-of-game?
             if ships_sunk:
-                send_package(spec.conn, MessageTypes.S_MESSAGE, f"{attacker_addr} has won.")
+                send_package(
+                    spec.conn,
+                    MessageTypes.S_MESSAGE,
+                    f"{attacker.addr} has won!"
+                )
                 return
-            send_package(spec.conn, MessageTypes.BOARD, board1, False)
-            send_package(spec.conn, MessageTypes.BOARD, board2, False)
-            msg = {
-                'hit':   f"{attacker_addr} has HIT the defender.",
-                'miss':  f"{attacker_addr} has MISSED the defender.",
-                'already_shot': f"{attacker_addr} has ALREADY SHOT at the defender."
-            }.get(result, '')
-            if msg:
-                send_package(spec.conn, MessageTypes.S_MESSAGE, msg)
+
+            # 3) Timeout
+            if result == "timeout":
+                send_package(
+                    spec.conn,
+                    MessageTypes.S_MESSAGE,
+                    f"{attacker.addr} timed out; turn skipped."
+                )
+            else:
+                # 4) Hit / Miss / Already shot
+                verb = {
+                    "hit": "has HIT the defender.",
+                    "miss": "has MISSED the defender.",
+                    "already_shot": "has ALREADY SHOT at the defender."
+                }.get(result)
+                if verb:
+                    send_package(
+                        spec.conn,
+                        MessageTypes.S_MESSAGE,
+                        f"{attacker.addr} {verb}"
+                    )
+
+            # 5) Send the defender's updated board
+            if defender_board is not None:
+                send_package(spec.conn, MessageTypes.BOARD, defender_board, False)
+
+            # 6) Spinner / queue position
             send_package(
                 spec.conn,
                 MessageTypes.WAITING,
                 f"You are number {idx + 2} in the queue"
             )
+
         except ConnectionError:
-            # prune disconnected spectator
             with t_lock:
                 if spec in player_queue:
                     player_queue.remove(spec)
-
 
 # ─── Main Server Loop ─────────────────────────────────────────────────────────
 def main():
@@ -209,7 +237,6 @@ def main():
             result = start_match(p1, p2)
 
             if result == "connection_lost":
-                # find and remove the disconnected player
                 winner, loser = determine_winner_and_loser(p1, p2)
 
                 send_package(
@@ -229,7 +256,6 @@ def main():
 
                 continue
 
-            # Normal finish: ask both for rematch
             r1, r2 = ask_for_rematch(p1, p2)
             with t_lock:
                 if r1 != "YES" and p1 in player_queue:
