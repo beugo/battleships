@@ -182,15 +182,14 @@ def main():
                 continue
 
             # Normal finish: ask both for rematch
-            r1 = ask_for_rematch(p1)
-            r2 = ask_for_rematch(p2)
+            r1, r2 = ask_for_rematch(p1), ask_for_rematch(p2)
             with t_lock:
                 if r1 != "YES" and p1 in player_queue:
                     player_queue.remove(p1)
                 if r2 != "YES" and p2 in player_queue:
                     player_queue.remove(p2)
 
-            send_announcement("A new game will start soon!")
+            send_announcement(MessageTypes.WAITING, "A new game will start soon!")
             time.sleep(1)
 
     except KeyboardInterrupt:
