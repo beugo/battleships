@@ -1,6 +1,7 @@
 import socket
 import threading
 import time
+from dataclasses import dataclass
 from battleship import run_two_player_game_online
 from utils import *
 
@@ -9,12 +10,26 @@ incoming_connections = []   # List of (conn, addr)
 player_queue = []           # List of Player instances
 t_lock = threading.Lock()  # Protects both lists
 running = False
+current_state = None
 
 # ─── Player Class ────────────────────────────────────────────────────────────
 class Player:
-    def __init__(self, conn, addr):
+    def __init__(self, conn, addr, state = None):
         self.conn = conn
         self.addr = addr
+
+# ─── Game State Class ────────────────────────────────────────────────────────
+class GameState:
+    def __init__(self, board1 = None, board2 = None, current_player = None):
+        self.board1 = board1
+        self.board2 = board2
+        self.current_player = current_player
+    
+    def update_gamestate(self, board1, board2, current_player):
+        self.board1 = board1
+        self.board2 = board2
+        self.current_player = current_player
+
 
 # ─── Receiver Thread ─────────────────────────────────────────────────────────
 def receiver_thread(server_sock):
@@ -59,7 +74,7 @@ def queue_maintainer_thread():
         time.sleep(0.5)
 
 # ─── Match & Rematch Logic ───────────────────────────────────────────────────
-def start_match(p1: Player, p2: Player) -> str:
+def start_match(p1: Player, p2: Player, current_state: GameState) -> str:
     """
     Start a single match between p1 and p2. Returns 'done' or 'early_exit'.
     """
@@ -69,7 +84,7 @@ def start_match(p1: Player, p2: Player) -> str:
     print("[INFO] " + game_starting_message)
     send_announcement(MessageTypes.WAITING, game_starting_message)
 
-    return run_two_player_game_online(p1, p2, notify_spectators)
+    return run_two_player_game_online(p1, p2, current_state, notify_spectators)
 
 def ask_for_rematch(p1: Player, p2: Player, timeout: float = 15.0) -> tuple[str, str]:
     """
@@ -126,6 +141,37 @@ def ask_for_rematch(p1: Player, p2: Player, timeout: float = 15.0) -> tuple[str,
             pass
 
     return (responses[p1], responses[p2])
+
+def handle_connection_lost(p1, p2):
+    """
+    Probes both p1 and p2 to find who left (loser) and who stayed (winner).
+    Over the next 30 seconds, once every second, we look through the player queue.
+    If the player who left is in the queue, we insert them into their spot, and return true.
+    If they are not found in time, the queue remains unchanged and we return false.
+    """
+    winner, loser = determine_winner_and_loser(p1, p2)
+
+    send_package(
+        winner.conn, 
+        MessageTypes.WAITING, 
+        "Your opponent has disconnected, please wait whilst we try to reconnect them."
+    )
+
+    print(f"[INFO] Removing disconnected player {loser.addr}")
+
+    with t_lock:
+        if loser in player_queue:
+            player_queue.remove(loser)
+
+    for _ in range(0, 30):
+        for p in player_queue:
+            if p.addr == loser.addr:
+                player_queue.remove(p)
+                player_queue.insert(0, p) if p1.addr == loser.addr else player_queue.insert(1, p)
+                return True
+        time.sleep(1)
+
+    return False
 
 # ─── Announcements ─────────────────────────────────────────────────────
 def send_announcement(message_type:MessageTypes, msg: str):
@@ -206,7 +252,7 @@ def notify_spectators(defender_board, result, ships_sunk, attacker):
 
 # ─── Main Server Loop ─────────────────────────────────────────────────────────
 def main():
-    global running
+    global running, current_state
 
     # Set up listening socket
     server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -233,27 +279,18 @@ def main():
                 time.sleep(1)
                 continue
 
+            if current_state is None:
+                current_state = GameState()
+
             # Play a match
-            result = start_match(p1, p2)
+            result = start_match(p1, p2, current_state)
+            conn_lost = (result == "connection_lost")
+            conn_found = conn_lost and handle_connection_lost(p1, p2)
 
-            if result == "connection_lost":
-                winner, loser = determine_winner_and_loser(p1, p2)
+            if not conn_found:
+                current_state = None
 
-                send_package(
-                    winner.conn, 
-                    MessageTypes.WAITING, 
-                    "Your opponent has disconnected, please wait for another"
-                
-                )
-
-                time.sleep(4)
-
-                print(f"[INFO] Removing disconnected player {loser.addr}")
-
-                with t_lock:
-                    if loser in player_queue:
-                        player_queue.remove(loser)
-
+            if conn_lost:
                 continue
 
             r1, r2 = ask_for_rematch(p1, p2)

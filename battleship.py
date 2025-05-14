@@ -386,34 +386,45 @@ def network_place_ships(board, conn):
 
 # ─── MAIN GAME LOGIC ───────────────────────────────────────────────────────────
 @detects_lost_connection
-def run_two_player_game_online(p1, p2, notify_spectators):
+def run_two_player_game_online(p1, p2, gamestate, notify_spectators):
 
     board1 = Board(BOARD_SIZE)
     board2 = Board(BOARD_SIZE)
 
+    if gamestate.board1 is None:
+        send_package(p2.conn, MessageTypes.WAITING, "Waiting for opponent to place their ships...")
+        testing_place_ships(board1, p1.conn)  # TODO: replace with network_place_ships before submission
+        gamestate.board1 = board1
+    else:
+        board1 = gamestate.board1
 
-    send_package(p2.conn, MessageTypes.WAITING, "Waiting for opponent to place their ships...")
-    testing_place_ships(board1, p1.conn)  # TODO: replace with network_place_ships before submission
+    if gamestate.board2 is None:
+        send_package(p1.conn, MessageTypes.WAITING, "Waiting for opponent to place their ships...")
+        testing_place_ships(board2, p2.conn)
+        gamestate.board2 = board2
+    else:
+        board2 = gamestate.board2
 
-    send_package(p1.conn, MessageTypes.WAITING, "Waiting for opponent to place their ships...")
-    testing_place_ships(board2, p2.conn)
-
-    current_player = 1
+    if gamestate.current_player is None:
+        current_player = 1
+        gamestate.current_player = 1
+    else:
+        current_player = gamestate.current_player
 
     while True:
         attacker = p1 if current_player == 1 else p2
-        defender_conn = p2.conn if current_player == 1 else p1.conn
+        defender = p2 if current_player == 1 else p1
         defender_board = board2 if current_player == 1 else board1
 
         send_package(attacker.conn, MessageTypes.PROMPT, "Enter coordinate to fire at (e.g. B5) or 'Ctrl + C' to forfeit:", TIMEOUT_DURATION)
-        send_package(defender_conn, MessageTypes.WAITING, "Waiting for opponent to fire...")
+        send_package(defender.conn, MessageTypes.WAITING, "Waiting for opponent to fire...")
 
         package = receive_package(attacker.conn)
         guess = package.get("coord", "").strip().upper()
 
         if package.get("timeout"):
             send_package(attacker.conn, MessageTypes.S_MESSAGE, "You took too long. Skipping your turn.")
-            send_package(defender_conn, MessageTypes.S_MESSAGE, "Opponent time out. It is now your turn.")
+            send_package(defender.conn, MessageTypes.S_MESSAGE, "Opponent time out. It is now your turn.")
             current_player = 2 if current_player == 1 else 1
             continue
 
@@ -426,14 +437,14 @@ def run_two_player_game_online(p1, p2, notify_spectators):
             if result == "hit":
                 if sunk_name:
                     send_package(attacker.conn, MessageTypes.S_MESSAGE, f"HIT! You blew up the {sunk_name}!")
-                    send_package(defender_conn, MessageTypes.S_MESSAGE, f"HIT! The other player has blown up your {sunk_name}!")
+                    send_package(defender.conn, MessageTypes.S_MESSAGE, f"HIT! The other player has blown up your {sunk_name}!")
                 else:
                     send_package(attacker.conn, MessageTypes.S_MESSAGE, "HIT!")
-                    send_package(defender_conn, MessageTypes.S_MESSAGE, "You were HIT!")
+                    send_package(defender.conn, MessageTypes.S_MESSAGE, "You were HIT!")
 
             elif result == "miss":
                 send_package(attacker.conn, MessageTypes.S_MESSAGE, "MISS!")
-                send_package(defender_conn, MessageTypes.S_MESSAGE, "The attacker MISSED!")
+                send_package(defender.conn, MessageTypes.S_MESSAGE, "The attacker MISSED!")
 
             elif result == "already_shot":
                 send_package(attacker.conn, MessageTypes.S_MESSAGE, "Already fired there.")
@@ -443,14 +454,15 @@ def run_two_player_game_online(p1, p2, notify_spectators):
 
             if ships_sunk:
                 send_package(attacker.conn, MessageTypes.RESULT, "Congratulations! You win.")
-                send_package(defender_conn, MessageTypes.RESULT, "You lost.")
+                send_package(defender.conn, MessageTypes.RESULT, "You lost.")
                 return "done"
 
             current_player = 2 if current_player == 1 else 1
+            gamestate.update_gamestate(board1, board2, current_player)
 
-        except Exception as e:
+        except ValueError as e:
             send_package(attacker.conn, MessageTypes.S_MESSAGE, f"Invalid input: {e}")
-
+        
 
 if __name__ == "__main__":
     run_single_player_game_locally()
