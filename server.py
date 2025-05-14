@@ -1,7 +1,6 @@
 import socket
 import threading
 import time
-from dataclasses import dataclass
 from battleship import run_two_player_game_online
 from utils import *
 
@@ -14,9 +13,10 @@ current_state = None
 
 # ─── Player Class ────────────────────────────────────────────────────────────
 class Player:
-    def __init__(self, conn, addr, state = None):
+    def __init__(self, conn, addr, username=None):
         self.conn = conn
         self.addr = addr
+        self.username = username
 
 # ─── Game State Class ────────────────────────────────────────────────────────
 class GameState:

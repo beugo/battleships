@@ -2,7 +2,8 @@ import sys
 import socket
 import signal
 import threading
-from inputimeout import inputimeout, TimeoutOccurred
+from prompt_toolkit import prompt
+from prompt_toolkit.patch_stdout import patch_stdout
 from utils import *
 from client_ui import *
 
@@ -12,7 +13,6 @@ PORT = 5000
 
 # ─── Global State ──────────────────────────────────────────────────────────────
 running = True
-printing_ready = threading.Event()
 console = Console()
 global_socket_reference = None
 input_timeout = None
@@ -28,7 +28,6 @@ def handle_sigint(signum, frame):
     except:
         pass
     running = False
-    printing_ready.set()
     sys.exit(0)
 
 # ─── Receiver Thread ───────────────────────────────────────────────────────────
@@ -45,27 +44,22 @@ def receive_messages(s):
 
             msg_type = package.get("type")
 
-            stop_spinner()
-
             if msg_type == "board":
                 print_board_as_table(package.get("data"))
 
             elif msg_type == "prompt":
                 print_boxed(package.get("msg"), style="green")
                 input_timeout = package.get("timeout")
-                printing_ready.set()
 
             elif msg_type == "waiting":
-                start_spinner(package.get("msg"))
+                print_boxed(package.get("msg"))
 
             elif msg_type == "result":
                 print_boxed(package.get("msg"), style="bold magenta")
-                printing_ready.clear()
 
             elif msg_type == "shutdown":
                 print('\n')
                 print_boxed(package.get("msg"), style="red")
-                printing_ready.set()
                 running = False
                 break
 
@@ -75,7 +69,6 @@ def receive_messages(s):
         except Exception as e:
             print_boxed(f"[ERROR] Receiver thread: {e}", title="Error", style="red")
             running = False
-            printing_ready.set()
             break
 
 # ─── Main Client Loop ──────────────────────────────────────────────────────────
@@ -96,22 +89,13 @@ def main():
 
         try:
             while running:
-                printing_ready.wait()
 
                 if not running:
                     break
 
-                if input_timeout is None:
-                    user_input = console.input(">> ")
-                else:
-                    try:
-                        user_input = inputimeout(">> ", input_timeout)
-                    except TimeoutOccurred:
-                        send_package(s, MessageTypes.COMMAND, "", True)
-                        printing_ready.clear()
-                        continue
+                with patch_stdout():
+                    user_input = prompt(">> ")
 
-                printing_ready.clear()
                 send_package(s, MessageTypes.COMMAND, user_input, False)
 
         except KeyboardInterrupt:

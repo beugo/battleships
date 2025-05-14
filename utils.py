@@ -25,15 +25,16 @@ class Frame:
 
 class MessageTypes(enum.Enum):
     # server -> client
-    RESULT = 1      # Game over
-    BOARD = 2       # Board state (for placing or playing)
-    PROMPT = 3      # Input request (e.g., place ship, fire)
-    S_MESSAGE = 4   # General server messages
-    WAITING = 5     # Show spinner / wait screen
-    SHUTDOWN = 6    # Tell client to shut down
+    RESULT = 2      # Game over
+    BOARD = 3       # Board state (for placing or playing)
+    PROMPT = 4      # Input request (e.g., place ship, fire)
+    S_MESSAGE = 5   # General server messages
+    WAITING = 6     # Show spinner / wait screen
+    SHUTDOWN = 7    # Tell client to shut down
 
     # client -> server
     COMMAND = 0     # Send input (e.g., fire, place ship)
+    CHAT = 1        # Send chat message to all other players
 
 # ─── Message Builders ──────────────────────────────────────────────────────────
 
@@ -44,6 +45,7 @@ def _build_command(data, timed_out): return {"type": "command", "timeout": timed
 def _build_s_message(msg): return {"type": "s_msg", "msg": msg}
 def _build_waiting(msg): return {"type": "waiting", "msg": msg}
 def _build_shutdown(msg): return {"type": "shutdown", "msg": msg}
+def _build_chat(msg, sender): return {"type": "chat", "sender": sender, "msg": msg}
 
 _builders = {
     MessageTypes.RESULT: _build_result,
@@ -53,6 +55,7 @@ _builders = {
     MessageTypes.S_MESSAGE: _build_s_message,
     MessageTypes.WAITING: _build_waiting,
     MessageTypes.SHUTDOWN: _build_shutdown,
+    MessageTypes.CHAT: _build_chat
 }
 
 def _build_json(type: MessageTypes, *args):
