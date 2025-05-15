@@ -93,12 +93,20 @@ def listen_to_client(player):
         while running:
             send_package(player.conn, MessageTypes.PROMPT, "Please enter your username")
             package = receive_package(player.conn)
+
             if package.get("type") == "chat":
                 send_package(player.conn, MessageTypes.S_MESSAGE, "You are not able to chat until you have a username. Please try again.")
-            else:
-                player.username = package.get("coord")
-                send_package(player.conn, MessageTypes.S_MESSAGE, f"Username set to: {player.username}")
-                break
+                continue
+
+            desired_user = package.get("coord")
+            with t_lock:
+                if any(p.username == desired_user for p in player_queue):
+                    send_package(player.conn, MessageTypes.S_MESSAGE, "Another player already has this username. Please try again.")
+                    continue
+    
+            player.username = desired_user
+            send_package(player.conn, MessageTypes.S_MESSAGE, f"Username set to: {player.username}")
+            break
         
         while running:
             package = receive_package(player.conn)
