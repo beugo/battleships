@@ -15,7 +15,6 @@ PORT = 5000
 running = True
 console = Console()
 global_socket_reference = None
-input_timeout = None
 
 # ─── Signal Handler ────────────────────────────────────────────────────────────
 def handle_sigint(signum, frame):
@@ -33,7 +32,7 @@ def handle_sigint(signum, frame):
 # ─── Receiver Thread ───────────────────────────────────────────────────────────
 def receive_messages(s):
     """Continuously receive and display messages from the server."""
-    global running, input_timeout
+    global running
 
     while running:
         try:
@@ -49,13 +48,15 @@ def receive_messages(s):
 
             elif msg_type == "prompt":
                 print_boxed(package.get("msg"), style="green")
-                input_timeout = package.get("timeout")
 
             elif msg_type == "waiting":
-                print_boxed(package.get("msg"))
+                print_boxed(package.get("msg"), style="dark_blue")
 
             elif msg_type == "result":
                 print_boxed(package.get("msg"), style="bold magenta")
+            
+            elif msg_type == "chat":
+                print_boxed(package.get("msg"), style="magenta")
 
             elif msg_type == "shutdown":
                 print('\n')
@@ -95,8 +96,15 @@ def main():
 
                 with patch_stdout():
                     user_input = prompt(">> ")
-
-                send_package(s, MessageTypes.COMMAND, user_input, False)
+                
+                if user_input.startswith("CHAT "):
+                    msg_type = MessageTypes.CHAT
+                    msg = user_input[5:]
+                else: 
+                    msg_type = MessageTypes.COMMAND
+                    msg = user_input
+                
+                send_package(s, msg_type, msg)
 
         except KeyboardInterrupt:
             print('\n')

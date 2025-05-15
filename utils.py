@@ -40,12 +40,12 @@ class MessageTypes(enum.Enum):
 
 def _build_result(msg): return {"type": "result", "msg": msg}
 def _build_board(show_ships, board): return {"type": "board", "ships": show_ships, "data": board}
-def _build_prompt(msg, timeout): return {"type": "prompt", "timeout": timeout, "msg": msg}
-def _build_command(data, timed_out): return {"type": "command", "timeout": timed_out, "coord": data}
+def _build_prompt(msg): return {"type": "prompt", "msg": msg}
+def _build_command(data): return {"type": "command", "coord": data}
 def _build_s_message(msg): return {"type": "s_msg", "msg": msg}
 def _build_waiting(msg): return {"type": "waiting", "msg": msg}
 def _build_shutdown(msg): return {"type": "shutdown", "msg": msg}
-def _build_chat(msg, sender): return {"type": "chat", "sender": sender, "msg": msg}
+def _build_chat(msg): return {"type": "chat", "msg": msg}
 
 _builders = {
     MessageTypes.RESULT: _build_result,

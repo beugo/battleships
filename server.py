@@ -13,14 +13,19 @@ current_state = None
 
 # ─── Player Class ────────────────────────────────────────────────────────────
 class Player:
-    def __init__(self, conn, addr, username=None):
+    def __init__(self, conn, addr):
         self.conn = conn
         self.addr = addr
-        self.username = username
+        self.username = None
+        self.my_turn = False
+        self.latest_coord = None
+        self.msg_lock = threading.Lock()
+        self.connected = True
 
 # ─── Game State Class ────────────────────────────────────────────────────────
 class GameState:
-    def __init__(self, board1 = None, board2 = None, current_player = None):
+    def __init__(self, p1, p2, board1 = None, board2 = None, current_player = None):
+        self.players = {p1, p2} # Stores the addresses of the two players in this game state.
         self.board1 = board1
         self.board2 = board2
         self.current_player = current_player
@@ -59,19 +64,70 @@ def queue_maintainer_thread():
                 player = Player(conn, addr)
 
                 try:
-                    send_package(
-                        player.conn,
-                        MessageTypes.WAITING,
-                        f"You are number {len(player_queue) + 1} in the queue"
-                    )
+                    queue_num = len(player_queue) - 1
+                    if queue_num > 0:
+                        send_package(
+                            player.conn,
+                            MessageTypes.WAITING,
+                            f"You are number {queue_num} in the queue"
+                        )
                 except (BrokenPipeError, ConnectionResetError, OSError) as e:
                     print(f"[INFO] Player at {addr} has disconnected before joining the queue")
                     continue
                 
                 player_queue.append(player)
+                threading.Thread(target=listen_to_client, args=(player,), daemon=True).start()
                 print(f"[INFO] Added {addr} to player_queue (position {len(player_queue)})")
                 
         time.sleep(0.5)
+
+# ─── Client Listening Thread ─────────────────────────────────────────────────
+def listen_to_client(player):
+    """
+    Ask the client for their username.
+    Constantly listen to a given client.
+    Broadcast CHAT message to all.
+    Store other commands for use in the game at the appropriate time.
+    """
+    try:
+        while running:
+            send_package(player.conn, MessageTypes.PROMPT, "Please enter your username")
+            package = receive_package(player.conn)
+            if package.get("type") == "chat":
+                send_package(player.conn, MessageTypes.S_MESSAGE, "You are not able to chat until you have a username. Please try again.")
+            else:
+                player.username = package.get("coord")
+                send_package(player.conn, MessageTypes.S_MESSAGE, f"Username set to: {player.username}")
+                break
+        
+        while running:
+            package = receive_package(player.conn)
+            if package.get("type") == "chat":
+                msg = f"{player.username}: {package.get('msg')}"
+                send_announcement(MessageTypes.CHAT, msg)
+            elif player.my_turn and player.latest_coord is None:
+                with player.msg_lock:
+                    player.latest_coord = package.get("coord")
+            else:
+                send_package(player.conn, MessageTypes.S_MESSAGE, "Please wait for your turn.")
+            
+    except ConnectionError:
+        print(f"[INFO] Could not send/receive from {player.addr}.")
+        player.connected = False
+        try:
+            if player.username is None:
+                with t_lock:
+                    player_queue.remove(player)
+                resend_queue_pos()
+                print(f"[INFO] {player.addr} left before choosing their username. Releasing them from the queue.")
+
+            elif (player_queue.index(player) > 1 or current_state is None):
+                with t_lock:
+                    player_queue.remove(player)
+                resend_queue_pos()
+                print(f"[INFO] Leaving player ({player.addr}) were not in the game yet. Released them from the queue.")
+        except ValueError:
+            print(f"[INFO] {player.addr} was already removed from the queue.")
 
 # ─── Match & Rematch Logic ───────────────────────────────────────────────────
 def start_match(p1: Player, p2: Player, current_state: GameState) -> str:
@@ -103,7 +159,6 @@ def ask_for_rematch(p1: Player, p2: Player, timeout: float = 15.0) -> tuple[str,
                 p.conn,
                 MessageTypes.PROMPT,
                 "Want to play again? (yes/no)",
-                None
             )
         except ConnectionError:
             print(f"[INFO] Could not prompt {p.addr}, defaulting to NO")
@@ -145,7 +200,7 @@ def ask_for_rematch(p1: Player, p2: Player, timeout: float = 15.0) -> tuple[str,
 def handle_connection_lost(p1, p2):
     """
     Probes both p1 and p2 to find who left (loser) and who stayed (winner).
-    Over the next 30 seconds, once every second, we look through the player queue.
+    Over the next 30 seconds, once every second (roughly), we look through the player queue.
     If the player who left is in the queue, we insert them into their spot, and return true.
     If they are not found in time, the queue remains unchanged and we return false.
     """
@@ -164,11 +219,12 @@ def handle_connection_lost(p1, p2):
             player_queue.remove(loser)
 
     for _ in range(0, 30):
-        for p in player_queue:
-            if p.addr == loser.addr:
-                player_queue.remove(p)
-                player_queue.insert(0, p) if p1.addr == loser.addr else player_queue.insert(1, p)
-                return True
+        with t_lock:
+            for p in player_queue:
+                if p.addr == loser.addr:
+                    player_queue.remove(p)
+                    player_queue.insert(0, p) if p1.addr == loser.addr else player_queue.insert(1, p)
+                    return True
         time.sleep(1)
 
     return False
@@ -242,13 +298,23 @@ def notify_spectators(defender_board, result, ships_sunk, attacker):
             send_package(
                 spec.conn,
                 MessageTypes.WAITING,
-                f"You are number {idx + 2} in the queue"
+                f"You are number {idx} in the queue"
             )
 
         except ConnectionError:
             with t_lock:
                 if spec in player_queue:
                     player_queue.remove(spec)
+
+def resend_queue_pos():
+    with t_lock:
+        spectators = player_queue[2:]
+    for i, spec in enumerate(spectators):
+        try:
+            send_package(spec.conn, MessageTypes.WAITING, f"You are number {i+1} in the queue")
+        except ConnectionError:
+            print(f"[INFO] Removing unreachable player {spec.addr} from queue")
+            player_queue.remove(spec)
 
 # ─── Main Server Loop ─────────────────────────────────────────────────────────
 def main():
@@ -275,12 +341,12 @@ def main():
                 else:
                     p1 = p2 = None
 
-            if not (p1 and p2):
+            if not (p1 and p2) or (p1.username == None or p2.username == None):
                 time.sleep(1)
                 continue
 
-            if current_state is None:
-                current_state = GameState()
+            if (current_state is None) or (current_state.players != {p1.addr, p2.addr}): # (no game) OR (different players)
+                current_state = GameState(p1.addr, p2.addr)
 
             # Play a match
             result = start_match(p1, p2, current_state)
@@ -301,6 +367,7 @@ def main():
                     player_queue.remove(p2)
 
             send_announcement(MessageTypes.WAITING, "A new game will start soon!")
+            resend_queue_pos()
             time.sleep(3)
 
     except KeyboardInterrupt:

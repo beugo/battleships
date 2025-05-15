@@ -13,7 +13,6 @@ import random
 from utils import *
 
 BOARD_SIZE = 10
-TIMEOUT_DURATION = 30
 SHIPS = [
     ("Carrier", 5),
     ("Battleship", 4),
@@ -307,22 +306,45 @@ def run_single_player_game_locally():
         except ValueError as e:
             print("  >> Invalid input:", e)
 
+def wait_for_message(player):
+    """
+    Reads the input from the player when available.
+    Only gives 30 seconds before returning.
+    """
+    player.my_turn = True
+    start = time.time()
+    while time.time() - start < 30.0:
+        if not player.connected:
+            raise ConnectionError
+        with player.msg_lock:
+            if player.latest_coord is not None:
+                coord = player.latest_coord
+                player.latest_coord = None
+                return coord
+    player.my_turn = False
+    return None
+    
 # ─── TESTING SHIP PLACEMENT ────────────────────────────────────────────────────
-def testing_place_ships(board, conn):
+def testing_place_ships(board, player):
     TESTING_SHIPS = [
         ("Dinghy", 2),
         ("Single Guy in the Water With Some Floaties", 1)
     ]
 
-    send_package(conn, MessageTypes.S_MESSAGE, "Please place your ships manually on the board.")
+    send_package(player.conn, MessageTypes.S_MESSAGE, "Please place your ships manually on the board.")
 
     for ship_name, ship_size in TESTING_SHIPS:
         while True:
-            send_package(conn, MessageTypes.BOARD, board, True)
-            send_package(conn, MessageTypes.S_MESSAGE, f"Placing your {ship_name} (size {ship_size})")
-            send_package(conn, MessageTypes.PROMPT, "Enter starting coordinate followed by orientation (e.g. A1 V):", None)
+            send_package(player.conn, MessageTypes.BOARD, board, True)
+            send_package(player.conn, MessageTypes.S_MESSAGE, f"Placing your {ship_name} (size {ship_size})")
+            send_package(player.conn, MessageTypes.PROMPT, "Enter starting coordinate followed by orientation (e.g. A1 V):")
 
-            placement = receive_package(conn).get("coord", "").strip().upper()
+            while True:
+                placement = wait_for_message(player)
+                if placement is None:
+                    continue
+                placement = placement.strip().upper()
+                break
 
             try:
                 coord_str, orientation_str = placement.split()
@@ -334,7 +356,7 @@ def testing_place_ships(board, conn):
                 orientation = 0 if orientation_str == "H" else 1
 
             except ValueError as e:
-                send_package(conn, MessageTypes.S_MESSAGE, f"[!] Invalid coordinate: {e}")
+                send_package(player.conn, MessageTypes.S_MESSAGE, f"[!] Invalid coordinate: {e}")
                 continue
 
             if board.can_place_ship(row, col, ship_size, orientation):
@@ -345,20 +367,25 @@ def testing_place_ships(board, conn):
                 })
                 break
             else:
-                send_package(conn, MessageTypes.S_MESSAGE, f"[!] Cannot place {ship_name} at {coord_str} (orientation={orientation_str}). Try again.")
+                send_package(player.conn, MessageTypes.S_MESSAGE, f"[!] Cannot place {ship_name} at {coord_str} (orientation={orientation_str}). Try again.")
                 
 
 # ─── ACTUAL NETWORK SHIP PLACEMENT ─────────────────────────────────────────────
-def network_place_ships(board, conn):
-    send_package(conn, MessageTypes.S_MESSAGE, "Please place your ships manually on the board.")
+def network_place_ships(board, player):
+    send_package(player.conn, MessageTypes.S_MESSAGE, "Please place your ships manually on the board.")
 
     for ship_name, ship_size in SHIPS:
         while True:
-            send_package(conn, MessageTypes.BOARD, board, True)
-            send_package(conn, MessageTypes.S_MESSAGE, f"Placing your {ship_name} (size {ship_size})")
-            send_package(conn, MessageTypes.PROMPT, "Enter starting coordinate followed by orientation (e.g. A1 V):", None)
+            send_package(player.conn, MessageTypes.BOARD, board, True)
+            send_package(player.conn, MessageTypes.S_MESSAGE, f"Placing your {ship_name} (size {ship_size})")
+            send_package(player.conn, MessageTypes.PROMPT, "Enter starting coordinate followed by orientation (e.g. A1 V):")
 
-            placement = receive_package(conn).get("coord", "").strip().upper()
+            while True:
+                placement = wait_for_message(player)
+                if placement is None:
+                    continue
+                placement = placement.strip().upper()
+                break
 
             try:
                 coord_str, orientation_str = placement.split()
@@ -370,7 +397,7 @@ def network_place_ships(board, conn):
                 orientation = 0 if orientation_str == "H" else 1
 
             except ValueError as e:
-                send_package(conn, MessageTypes.S_MESSAGE, f"[!] Invalid coordinate: {e}")
+                send_package(player.conn, MessageTypes.S_MESSAGE, f"[!] Invalid coordinate: {e}")
                 continue
 
             if board.can_place_ship(row, col, ship_size, orientation):
@@ -381,7 +408,7 @@ def network_place_ships(board, conn):
                 })
                 break
             else:
-                send_package(conn, MessageTypes.S_MESSAGE, f"[!] Cannot place {ship_name} at {coord_str} (orientation={orientation_str}). Try again.")
+                send_package(player.conn, MessageTypes.S_MESSAGE, f"[!] Cannot place {ship_name} at {coord_str} (orientation={orientation_str}). Try again.")
                 
 
 # ─── MAIN GAME LOGIC ───────────────────────────────────────────────────────────
@@ -393,14 +420,14 @@ def run_two_player_game_online(p1, p2, gamestate, notify_spectators):
 
     if gamestate.board1 is None:
         send_package(p2.conn, MessageTypes.WAITING, "Waiting for opponent to place their ships...")
-        testing_place_ships(board1, p1.conn)  # TODO: replace with network_place_ships before submission
+        testing_place_ships(board1, p1)  # TODO: replace with network_place_ships before submission
         gamestate.board1 = board1
     else:
         board1 = gamestate.board1
 
     if gamestate.board2 is None:
         send_package(p1.conn, MessageTypes.WAITING, "Waiting for opponent to place their ships...")
-        testing_place_ships(board2, p2.conn)
+        testing_place_ships(board2, p2)
         gamestate.board2 = board2
     else:
         board2 = gamestate.board2
@@ -416,17 +443,18 @@ def run_two_player_game_online(p1, p2, gamestate, notify_spectators):
         defender = p2 if current_player == 1 else p1
         defender_board = board2 if current_player == 1 else board1
 
-        send_package(attacker.conn, MessageTypes.PROMPT, "Enter coordinate to fire at (e.g. B5) or 'Ctrl + C' to forfeit:", TIMEOUT_DURATION)
+        send_package(attacker.conn, MessageTypes.PROMPT, "Enter coordinate to fire at (e.g. B5) or 'Ctrl + C' to forfeit:")
         send_package(defender.conn, MessageTypes.WAITING, "Waiting for opponent to fire...")
 
-        package = receive_package(attacker.conn)
-        guess = package.get("coord", "").strip().upper()
-
-        if package.get("timeout"):
+        guess = wait_for_message(attacker)
+        
+        if guess is None:
             send_package(attacker.conn, MessageTypes.S_MESSAGE, "You took too long. Skipping your turn.")
             send_package(defender.conn, MessageTypes.S_MESSAGE, "Opponent time out. It is now your turn.")
             current_player = 2 if current_player == 1 else 1
             continue
+
+        guess = guess.strip().upper()
 
         try:
             row, col = parse_coordinate(guess)
