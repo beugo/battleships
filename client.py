@@ -1,6 +1,5 @@
 import sys
 import socket
-import signal
 import threading
 from prompt_toolkit import prompt
 from prompt_toolkit.patch_stdout import patch_stdout
@@ -13,23 +12,9 @@ PORT = 5000
 
 # ─── Global State ──────────────────────────────────────────────────────────────
 running = True
-console = Console()
-global_socket_reference = None
-
-# ─── Signal Handler ────────────────────────────────────────────────────────────
-def handle_sigint(signum, frame):
-    global running
-    print('\n')
-    print_boxed("[INFO] Ctrl+C pressed. Quitting game...", style="yellow")
-    try:
-        if global_socket_reference:
-            send_package(global_socket_reference, MessageTypes.COMMAND, "quit", False)
-    except:
-        pass
-    running = False
-    sys.exit(0)
 
 # ─── Receiver Thread ───────────────────────────────────────────────────────────
+
 def receive_messages(s):
     """Continuously receive and display messages from the server."""
     global running
@@ -54,7 +39,7 @@ def receive_messages(s):
 
             elif msg_type == "result":
                 print_boxed(package.get("msg"), style="bold magenta")
-            
+
             elif msg_type == "chat":
                 print_boxed(package.get("msg"), style="magenta")
 
@@ -73,16 +58,14 @@ def receive_messages(s):
             break
 
 # ─── Main Client Loop ──────────────────────────────────────────────────────────
-def main():
-    global running, global_socket_reference
 
-    signal.signal(signal.SIGINT, handle_sigint)
+def main():
+    global running
 
     source_port = int(sys.argv[1]) if len(sys.argv) > 1 else 0
 
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(("127.0.0.1", source_port))
-        global_socket_reference = s
         s.connect((HOST, PORT))
 
         receiving_thread = threading.Thread(target=receive_messages, args=(s,), daemon=True)
@@ -90,25 +73,29 @@ def main():
 
         try:
             while running:
-
                 if not running:
                     break
 
                 with patch_stdout():
                     user_input = prompt(">> ")
-                
+
                 if user_input.startswith("CHAT "):
                     msg_type = MessageTypes.CHAT
                     msg = user_input[5:]
-                else: 
+                else:
                     msg_type = MessageTypes.COMMAND
                     msg = user_input
-                
+
                 send_package(s, msg_type, msg)
 
         except KeyboardInterrupt:
             print('\n')
-            print_boxed("[INFO] Client exiting.", style="yellow")
+            print_boxed("[INFO] Ctrl+C pressed. Quitting game...", style="yellow")
+            try:
+                # this might be a bit useless at the moment cause the server doesn't pick it up, although if we beef up the client handler thread in future then it could catch this
+                send_package(s, MessageTypes.COMMAND, "quit", False)   
+            except Exception:                                         
+                pass
             running = False
 
         finally:
@@ -116,5 +103,6 @@ def main():
             print_boxed("[INFO] Client has shut down.", style="green")
 
 # ─── Entry Point ───────────────────────────────────────────────────────────────
+
 if __name__ == "__main__":
     main()
