@@ -102,50 +102,47 @@ def client_handler(player: Player):
             if not package:
                 raise ConnectionError("Lost during login")
 
-            login_or_register, desired_username = package.get("coord").split()
+            cmd, username = package.get("coord").split(maxsplit=1)
 
-            if login_or_register == "REGISTER":
-                if any(username == desired_username for username in all_player_logins.keys()):
+            if cmd == "REGISTER":
+                if username in all_player_logins:
                     send_package(player.conn, MessageTypes.S_MESSAGE, "USERNAME_TAKEN")
                     continue
-                else: 
-                    send_package(player.conn, MessageTypes.S_MESSAGE, "USERNAME_OK")
-                    player.username = desired_username
-                    pin_package = receive_package(player.conn)
-                    desired_pin = pin_package.get("coord")
-                    print(f"[[INFO] {player.addr} has successfully registered and is now known as {player.username}")
-                    all_player_logins[player.username] = desired_pin
-                    player.pin = desired_pin
+                send_package(player.conn, MessageTypes.S_MESSAGE, "USERNAME_OK")
+                pin_package = receive_package(player.conn)
+                pin = pin_package.get("coord").split()[-1]
+                all_player_logins[username] = pin
+                send_package(player.conn, MessageTypes.S_MESSAGE, "REGISTRATION_SUCCESS")
+                player.username, player.pin = username, pin
 
 
-            elif login_or_register == "LOGIN":
-                if len(all_player_logins.keys()) == 0:
-                    send_package(player.conn, MessageTypes.S_MESSAGE, "SUSSY_ALERT!!!")
-                if not any(p.username == desired_username for p in all_player_logins.keys()):
+            elif cmd == "LOGIN":
+                if username not in all_player_logins:
                     send_package(player.conn, MessageTypes.S_MESSAGE, "USER_NOT_FOUND")
                     continue
                 send_package(player.conn, MessageTypes.S_MESSAGE, "USERNAME_OK")
-                player.username = desired_username
-                pin_successful = False
-                while not pin_successful:
+                for _ in range(3):
                     pin_package = receive_package(player.conn)
-                    attempted_pin = pin_package.get("coord")
-                    if attempted_pin == all_player_logins[player.username]:
+                    pin_try = pin_package.get("coord").split()[-1]
+                    if pin_try == all_player_logins[username]:
                         send_package(player.conn, MessageTypes.S_MESSAGE, "LOGIN_SUCCESS")
-                    else:
-                        send_package(player.conn, MessageTypes.S_MESSAGE, "LOGIN_FAILURE")
+                        player.username, player.pin = username, pin_try
+                        break
+                    send_package(player.conn, MessageTypes.S_MESSAGE, "LOGIN_FAILURE")
+                else:
+                    continue
 
-        print("Should be sending a message to the client soon")
+        role_msg = (
+            "Success! Waiting for your opponent…" if len(player_queue) < 2
+            else f"You are number {len(player_queue)-1} in the queue - you'll see live updates."
+        )
+        send_package(player.conn, MessageTypes.WAITING, role_msg)
 
 
 
         # ── 2.  Join the queue ──────────────────────────────────────────────
         with t_lock:
             player_queue.append(player)
-            queue_pos = len(player_queue) - 1
-        if queue_pos:
-            send_package(player.conn, MessageTypes.WAITING,
-                         f"You are number {queue_pos} in the queue")
 
         # ── 3.  Main receive loop ───────────────────────────────────────────
         while running and player.connected:
@@ -164,14 +161,8 @@ def client_handler(player: Player):
             # --- NON-CHAT (commands / coords) -----------------------------
             # Find out if this player is actively playing
             with t_lock:
-                is_player   = player in player_queue[:2]
                 is_turn     = (current_state and
                                current_state.current_player == player.addr)
-
-            if not is_player:
-                send_package(player.conn, MessageTypes.S_MESSAGE,
-                             "You are spectating — wait for your turn in queue.")
-                continue
 
             if not is_turn:
                 send_package(player.conn, MessageTypes.S_MESSAGE,
@@ -207,7 +198,7 @@ def start_match(p1: Player, p2: Player, current_state: GameState) -> str:
     Start a single match between p1 and p2. Returns 'done' or 'early_exit'.
     """
 
-    game_starting_message = f"Starting match between {p1.addr} and {p2.addr}"
+    game_starting_message = f"Starting match between {p1.username} and {p2.username}"
 
     print("[INFO] " + game_starting_message)
     send_announcement(MessageTypes.WAITING, game_starting_message)
