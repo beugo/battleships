@@ -10,6 +10,7 @@ player_queue = []           # List of Player instances
 t_lock = threading.Lock()  # Protects both lists
 running = False
 current_state = None
+all_player_logins = {}
 
 # ─── Player Class ────────────────────────────────────────────────────────────
 class Player:
@@ -17,6 +18,7 @@ class Player:
         self.conn = conn
         self.addr = addr
         self.username = None
+        self.pin = None
         self.my_turn = False
         self.latest_coord = None
         self.msg_lock = threading.Lock()
@@ -75,67 +77,129 @@ def queue_maintainer_thread():
                     print(f"[INFO] Player at {addr} has disconnected before joining the queue")
                     continue
                 
-                player_queue.append(player)
-                threading.Thread(target=listen_to_client, args=(player,), daemon=True).start()
-                print(f"[INFO] Added {addr} to player_queue (position {len(player_queue)})")
+                threading.Thread(target=client_handler, args=(player,), daemon=True).start()
+                print(f"[INFO] A client-handler has been assigned to {addr}, now trying to log this client in.")
                 
         time.sleep(0.5)
 
-# ─── Client Listening Thread ─────────────────────────────────────────────────
-def listen_to_client(player):
+# ─── Client Handler Thread ────────────────────────────────────────────────────
+def client_handler(player: Player):
     """
-    Ask the client for their username.
-    Constantly listen to a given client.
-    Broadcast CHAT message to all.
-    Store other commands for use in the game at the appropriate time.
+    1) Ask the client to log in (username).
+    2) Once logged in, push them onto player_queue.
+    3) Then sit in a loop:
+       • CHAT  -> broadcast immediately.
+       • In-game commands -> accept only if this player is one of the first two
+         in player_queue **and** it is currently their turn.
+       • Anything else -> polite 'wait your turn' message.
     """
+    global running, current_state
+
     try:
-        while running:
-            send_package(player.conn, MessageTypes.PROMPT, "Please enter your username")
+        # ── 1.  Login / Register ────────────────────────────────────────────
+        while running and player.username is None and player.pin is None:
             package = receive_package(player.conn)
+            if not package:
+                raise ConnectionError("Lost during login")
 
-            if package.get("type") == "chat":
-                send_package(player.conn, MessageTypes.S_MESSAGE, "You are not able to chat until you have a username. Please try again.")
-                continue
+            login_or_register, desired_username = package.get("coord").split()
 
-            desired_user = package.get("coord")
-            with t_lock:
-                if any(p.username == desired_user for p in player_queue):
-                    send_package(player.conn, MessageTypes.S_MESSAGE, "Another player already has this username. Please try again.")
+            if login_or_register == "REGISTER":
+                if any(username == desired_username for username in all_player_logins.keys()):
+                    send_package(player.conn, MessageTypes.S_MESSAGE, "USERNAME_TAKEN")
                     continue
-    
-            player.username = desired_user
-            send_package(player.conn, MessageTypes.S_MESSAGE, f"Username set to: {player.username}")
-            break
-        
-        while running:
+                else: 
+                    send_package(player.conn, MessageTypes.S_MESSAGE, "USERNAME_OK")
+                    player.username = desired_username
+                    pin_package = receive_package(player.conn)
+                    desired_pin = pin_package.get("coord")
+                    print(f"[[INFO] {player.addr} has successfully registered and is now known as {player.username}")
+                    all_player_logins[player.username] = desired_pin
+                    player.pin = desired_pin
+
+
+            elif login_or_register == "LOGIN":
+                if len(all_player_logins.keys()) == 0:
+                    send_package(player.conn, MessageTypes.S_MESSAGE, "SUSSY_ALERT!!!")
+                if not any(p.username == desired_username for p in all_player_logins.keys()):
+                    send_package(player.conn, MessageTypes.S_MESSAGE, "USER_NOT_FOUND")
+                    continue
+                send_package(player.conn, MessageTypes.S_MESSAGE, "USERNAME_OK")
+                player.username = desired_username
+                pin_successful = False
+                while not pin_successful:
+                    pin_package = receive_package(player.conn)
+                    attempted_pin = pin_package.get("coord")
+                    if attempted_pin == all_player_logins[player.username]:
+                        send_package(player.conn, MessageTypes.S_MESSAGE, "LOGIN_SUCCESS")
+                    else:
+                        send_package(player.conn, MessageTypes.S_MESSAGE, "LOGIN_FAILURE")
+
+        print("Should be sending a message to the client soon")
+
+
+
+        # ── 2.  Join the queue ──────────────────────────────────────────────
+        with t_lock:
+            player_queue.append(player)
+            queue_pos = len(player_queue) - 1
+        if queue_pos:
+            send_package(player.conn, MessageTypes.WAITING,
+                         f"You are number {queue_pos} in the queue")
+
+        # ── 3.  Main receive loop ───────────────────────────────────────────
+        while running and player.connected:
             package = receive_package(player.conn)
-            if package.get("type") == "chat":
+            if not package:
+                raise ConnectionError("disconnect")
+
+            p_type = package.get("type")
+
+            # --- CHAT ------------------------------------------------------
+            if p_type == "chat":
                 msg = f"{player.username}: {package.get('msg')}"
                 send_announcement(MessageTypes.CHAT, msg)
-            elif player.my_turn and player.latest_coord is None:
-                with player.msg_lock:
-                    player.latest_coord = package.get("coord")
-            else:
-                send_package(player.conn, MessageTypes.S_MESSAGE, "Please wait for your turn.")
-            
-    except ConnectionError:
-        print(f"[INFO] Could not send/receive from {player.addr}.")
-        player.connected = False
-        try:
-            if player.username is None:
-                with t_lock:
-                    player_queue.remove(player)
-                resend_queue_pos()
-                print(f"[INFO] {player.addr} left before choosing their username. Releasing them from the queue.")
+                continue
 
-            elif (player_queue.index(player) > 1 or current_state is None):
-                with t_lock:
-                    player_queue.remove(player)
-                resend_queue_pos()
-                print(f"[INFO] Leaving player ({player.addr}) were not in the game yet. Released them from the queue.")
-        except ValueError:
-            print(f"[INFO] {player.addr} was already removed from the queue.")
+            # --- NON-CHAT (commands / coords) -----------------------------
+            # Find out if this player is actively playing
+            with t_lock:
+                is_player   = player in player_queue[:2]
+                is_turn     = (current_state and
+                               current_state.current_player == player.addr)
+
+            if not is_player:
+                send_package(player.conn, MessageTypes.S_MESSAGE,
+                             "You are spectating — wait for your turn in queue.")
+                continue
+
+            if not is_turn:
+                send_package(player.conn, MessageTypes.S_MESSAGE,
+                             "Please wait, it isn't your turn.")
+                continue
+
+            # It's their turn and they sent a coord
+            coord = package.get("coord")
+            if coord:
+                with player.msg_lock:
+                    player.latest_coord = coord
+            else:
+                send_package(player.conn, MessageTypes.S_MESSAGE,
+                             "Invalid move payload.")
+
+    except ConnectionError:
+        print(f"[INFO] {player.addr} disconnected.")
+    finally:
+        player.connected = False
+        # Remove from queue if they’re still there
+        with t_lock:
+            if player in player_queue:
+                player_queue.remove(player)
+        resend_queue_pos()
+        try:
+            player.conn.close()
+        except:
+            pass
 
 # ─── Match & Rematch Logic ───────────────────────────────────────────────────
 def start_match(p1: Player, p2: Player, current_state: GameState) -> str:
@@ -180,8 +244,8 @@ def ask_for_rematch(p1: Player, p2: Player, timeout: float = 15.0) -> tuple[str,
 
         p.conn.settimeout(remaining)
         try:
-            pkg = receive_package(p.conn)
-            resp = pkg.get("coord", "").strip().upper()
+            package = receive_package(p.conn)
+            resp = package.get("coord", "").strip().upper()
             if resp not in ("YES", "NO"):
                 resp = "NO"
         except socket.timeout:
