@@ -433,15 +433,13 @@ def run_two_player_game_online(p1, p2, gamestate, notify_spectators):
         board2 = gamestate.board2
 
     if gamestate.current_player is None:
-        current_player = 1
-        gamestate.current_player = 1
-    else:
-        current_player = gamestate.current_player
+        gamestate.current_player = p1.addr
 
     while True:
-        attacker = p1 if current_player == 1 else p2
-        defender = p2 if current_player == 1 else p1
-        defender_board = board2 if current_player == 1 else board1
+        attacker, defender = (
+            (p1, p2) if gamestate.current_player == p1.addr else (p2, p1)
+        )
+        defender_board = board2 if attacker is p1 else board1
 
         send_package(attacker.conn, MessageTypes.PROMPT, "Enter coordinate to fire at (e.g. B5) or 'Ctrl + C' to forfeit:")
         send_package(defender.conn, MessageTypes.WAITING, "Waiting for opponent to fire...")
@@ -480,13 +478,15 @@ def run_two_player_game_online(p1, p2, gamestate, notify_spectators):
             ships_sunk = defender_board.all_ships_sunk()
             notify_spectators(defender_board, result, ships_sunk, attacker)
 
-            if ships_sunk:
+            if defender_board.all_ships_sunk():
                 send_package(attacker.conn, MessageTypes.RESULT, "Congratulations! You win.")
                 send_package(defender.conn, MessageTypes.RESULT, "You lost.")
                 return "done"
 
-            current_player = 2 if current_player == 1 else 1
-            gamestate.update_gamestate(board1, board2, current_player)
+            gamestate.current_player = (
+                p2.addr if gamestate.current_player == p1.addr else p1.addr
+            )
+            gamestate.update_gamestate(board1, board2, gamestate.current_player)
 
         except ValueError as e:
             send_package(attacker.conn, MessageTypes.S_MESSAGE, f"Invalid input: {e}")

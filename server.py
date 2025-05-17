@@ -131,6 +131,10 @@ def client_handler(player: Player):
                     send_package(player.conn, MessageTypes.S_MESSAGE, "LOGIN_FAILURE")
                 else:
                     continue
+            
+
+            else:
+                send_package(player.conn, MessageTypes.S_MESSAGE, "You must either login or register before joining")
 
         role_msg = (
             "Success! Waiting for your opponent…" if len(player_queue) < 2
@@ -161,12 +165,14 @@ def client_handler(player: Player):
             # --- NON-CHAT (commands / coords) -----------------------------
             # Find out if this player is actively playing
             with t_lock:
-                is_turn     = (current_state and
-                               current_state.current_player == player.addr)
+                actively_playing = current_state and player.addr in current_state.players
+                placement_phase  = actively_playing and (
+                    current_state.board1 is None or current_state.board2 is None)
 
-            if not is_turn:
+            if not (placement_phase or
+                    (current_state and current_state.current_player == player.addr)):
                 send_package(player.conn, MessageTypes.S_MESSAGE,
-                             "Please wait, it isn't your turn.")
+                            "Please wait, it isn't your turn.")
                 continue
 
             # It's their turn and they sent a coord
