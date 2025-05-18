@@ -431,7 +431,7 @@ def run_two_player_game_online(p1, p2, gamestate, notify_spectators):
         if guess is None:
             send_package(attacker.conn, MessageTypes.S_MESSAGE, "You took too long. Skipping your turn.")
             send_package(defender.conn, MessageTypes.S_MESSAGE, "Opponent time out. It is now your turn.")
-            current_player = 2 if current_player == 1 else 1
+            gamestate.current_player = p2.addr if gamestate.current_player == p1.addr else p1.addr
             continue
 
         guess = guess.strip().upper()
