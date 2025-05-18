@@ -128,7 +128,11 @@ def main():
 
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(("127.0.0.1", src_port))
-        s.connect((HOST, PORT))
+        try:
+            s.connect((HOST, PORT))
+        except:
+            print_boxed("Server is down, try again later...", style="red")
+            return
 
         # Auth
         print_boxed("Welcome to Battleships!", style="cyan")
