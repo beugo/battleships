@@ -134,20 +134,20 @@ def main():
         except:
             print_boxed("Server is down, try again later...", style="red")
             return
-
-        # Auth
-        print_boxed("Welcome to Battleships!", style="cyan")
-        print_boxed("Are you a new player? (y/n)", style="green")
-        is_new = ask(">> ").lower().startswith("y")
-        if not (register(s) if is_new else login(s)):
-            print_boxed("Could not authenticate — exiting.", style="red")
-            return
-
-        # Start receiver thread
-        threading.Thread(target=receiver, args=(s,), daemon=True).start()
-
-        # Chat / command loop
+        
         try:
+            # Auth
+            print_boxed("Welcome to Battleships!", style="cyan")
+            print_boxed("Are you a new player? (y/n)", style="green")
+            is_new = ask(">> ").lower().startswith("y")
+            if not (register(s) if is_new else login(s)):
+                print_boxed("Could not authenticate — exiting.", style="red")
+                return
+
+            # Start receiver thread
+            threading.Thread(target=receiver, args=(s,), daemon=True).start()
+
+            # Chat / command loop
             while running:
                 cmd = ask(">> ")
                 if cmd.startswith("CHAT "):
