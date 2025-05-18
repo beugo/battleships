@@ -273,9 +273,9 @@ def handle_connection_lost(p1, p2):
     for _ in range(0, 30):
         with t_lock:
             for p in player_queue:
-                if p.addr == loser.addr:
+                if p.username == loser.username:
                     player_queue.remove(p)
-                    player_queue.insert(0, p) if p1.addr == loser.addr else player_queue.insert(1, p)
+                    player_queue.insert(0, p) if p1.username == loser.username else player_queue.insert(1, p)
                     return True
         time.sleep(1)
 
