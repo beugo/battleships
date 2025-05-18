@@ -26,8 +26,8 @@ class Player:
 
 # ─── Game State Class ────────────────────────────────────────────────────────
 class GameState:
-    def __init__(self, p1, p2, board1 = None, board2 = None, current_player = None):
-        self.players = {p1, p2} # Stores the addresses of the two players in this game state.
+    def __init__(self, p1_addr, p2_addr, board1 = None, board2 = None, current_player = None):
+        self.players = {p1_addr, p2_addr} # Stores the addresses of the two players in this game state.
         self.board1 = board1
         self.board2 = board2
         self.current_player = current_player
@@ -36,6 +36,15 @@ class GameState:
         self.board1 = board1
         self.board2 = board2
         self.current_player = current_player
+
+    def replace_addr(self, old, new):
+        """Update internal sets when a player reconnects with a
+        different (ip,port)."""
+        if old in self.players:
+            self.players.remove(old)
+            self.players.add(new)
+        if self.current_player == old:
+            self.current_player = new
 
 
 # ─── Receiver Thread ─────────────────────────────────────────────────────────
@@ -275,7 +284,10 @@ def handle_connection_lost(p1, p2):
             for p in player_queue:
                 if p.username == loser.username:
                     player_queue.remove(p)
-                    player_queue.insert(0, p) if p1.username == loser.username else player_queue.insert(1, p)
+                    idx = 0 if p1.username == loser.username else 1
+                    player_queue.insert(idx, p)
+                    if current_state is not None:
+                        current_state.replace_addr(loser.addr, p.addr)
                     return True
         time.sleep(1)
 
