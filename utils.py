@@ -1,9 +1,10 @@
-import socket
+from base64 import b64decode, b64encode
 import struct
 import json
 import enum
 import zlib
 import functools
+from Crypto.Cipher import AES
 
 # ─── Frame Class ───────────────────────────────────────────────────────────────
 
@@ -20,6 +21,26 @@ class Frame:
 
     def unpack_header(self, header):
         self.type, self.length, self.checksum = struct.unpack_from('HHI', header)
+
+# ─── Encryption: AES-CTR ────────────────────────────────────────────────────────
+
+key = b'sixteen byte key'
+
+def aes_ctr_encrypt(key, data):
+    cipher = AES.new(key, AES.MODE_CTR)
+    ct_bytes = cipher.encrypt(data)
+    nonce = b64encode(cipher.nonce).decode()
+    ciphertext = b64encode(ct_bytes).decode()
+    return (ciphertext, nonce)
+
+def aes_ctr_decrypt(key, ciphertext, nonce):
+    try:
+        cipher = AES.new(key, AES.MODE_CTR, nonce=nonce)
+        pt = cipher.decrypt(ciphertext)
+        return pt
+    
+    except (ValueError, KeyError):
+        pass
 
 # ─── Message Types ─────────────────────────────────────────────────────────────
 
@@ -103,6 +124,7 @@ def send_package(s, type: MessageTypes, *args):
     f = Frame()
     f.type = type.value
 
+    # Create JSON dictionary
     if type == MessageTypes.BOARD:
         board_obj, show_ships = args
         board_string = _create_board(board_obj, show_ships)
@@ -110,13 +132,24 @@ def send_package(s, type: MessageTypes, *args):
     else:
         json_dict = _build_json(type, *args)
 
-    f.jsonmsg = json.dumps(json_dict).encode()
+    # Encrpyt
+    plaintext = json.dumps(json_dict).encode()
+
+    ciphertext, nonce = aes_ctr_encrypt(key, plaintext)
+
+    f.jsonmsg = json.dumps({
+        "ciphertext": ciphertext,
+        "nonce": nonce
+    }).encode()
+
+    # Checksum
     f.length = len(f.jsonmsg)
 
     packed = f.pack()
     f.checksum = zlib.crc32(packed)
     packed = f.pack()
 
+    # Send
     try:
         s.sendall(packed)
     except (BrokenPipeError, ConnectionResetError, OSError) as e:
@@ -125,16 +158,25 @@ def send_package(s, type: MessageTypes, *args):
     
 def receive_package(s) -> dict:
     f = Frame()
+
+    # Receive and unpack
     header = _recv_exact(s, 8)
     f.unpack_header(header)
     f.jsonmsg = _recv_exact(s, f.length)
 
+    # Checksum
     expected_checksum = f.checksum
     f.checksum = 0
     if expected_checksum != zlib.crc32(f.pack()):
         raise ValueError("Corrupted packet received.")
-
-    return json.loads(f.jsonmsg.decode())
+    
+    # Decrypt
+    payload = json.loads(f.jsonmsg.decode())
+    nonce = b64decode(payload['nonce'])
+    ciphertext = b64decode(payload['ciphertext'])
+    plaintext = aes_ctr_decrypt(key, ciphertext, nonce)
+    
+    return json.loads(plaintext.decode())
 
 def determine_winner_and_loser(p1, p2):
     """
