@@ -1,4 +1,3 @@
-from base64 import b64decode, b64encode
 import struct
 import json
 import enum
@@ -18,14 +17,15 @@ class Frame:
         self.type = None
         self.length = 0
         self.checksum = 0
+        self.nonce = b''
         self.jsonmsg = b''
 
     def pack(self):
-        # H = unsigned short (2 bytes), I = unsigned int (4 bytes), s = string of length jsonmsg
-        return struct.pack(f'HHI{len(self.jsonmsg)}s', self.type, self.length, self.checksum, self.jsonmsg)
+        # H = unsigned short (2 bytes), I = unsigned int (4 bytes), s = bytes
+        return struct.pack(f'HHI8s{len(self.jsonmsg)}s', self.type, self.length, self.checksum, self.nonce, self.jsonmsg)
 
     def unpack_header(self, header):
-        self.type, self.length, self.checksum = struct.unpack_from('HHI', header)
+        self.type, self.length, self.checksum, self.nonce = struct.unpack_from(f'HHI8s', header)
 
 # ─── Encryption: AES-CTR ────────────────────────────────────────────────────────
 
@@ -37,9 +37,7 @@ def aes_ctr_encrypt(data):
     global key
     cipher = AES.new(key, AES.MODE_CTR)
     ct_bytes = cipher.encrypt(data)
-    nonce = b64encode(cipher.nonce).decode()
-    ciphertext = b64encode(ct_bytes).decode()
-    return (ciphertext, nonce)
+    return (ct_bytes, cipher.nonce)
 
 def aes_ctr_decrypt(ciphertext, nonce):
     global key
@@ -138,14 +136,14 @@ def send_package(s, type: MessageTypes, *args):
         json_dict = _build_json(type, *args)
 
     # Encrpyt
-    plaintext = json.dumps(json_dict).encode()
+    plaintext = json.dumps({
+        "data" : json_dict,
+        "seq": 0 # TODO
+    }).encode()
 
     ciphertext, nonce = aes_ctr_encrypt(plaintext)
-
-    f.jsonmsg = json.dumps({
-        "ciphertext": ciphertext,
-        "nonce": nonce
-    }).encode()
+    f.jsonmsg = ciphertext
+    f.nonce = nonce
 
     # Checksum
     f.length = len(f.jsonmsg)
@@ -166,7 +164,7 @@ def receive_package(s) -> dict:
         f = Frame()
         try:
             # Receive and unpack
-            header = _recv_exact(s, 8)
+            header = _recv_exact(s, 16)
             f.unpack_header(header)
             f.jsonmsg = _recv_exact(s, f.length)
 
@@ -177,12 +175,17 @@ def receive_package(s) -> dict:
                 raise ValueError("Corrupted packet received.")
             
             # Decrypt
-            payload = json.loads(f.jsonmsg.decode())
-            nonce = b64decode(payload['nonce'])
-            ciphertext = b64decode(payload['ciphertext'])
-            plaintext = aes_ctr_decrypt(ciphertext, nonce)
+            plaintext = aes_ctr_decrypt(f.jsonmsg, f.nonce)
+            payload = json.loads(plaintext.decode())
+            
+            data = payload['data']
+            seq = payload['seq']
 
-            return json.loads(plaintext.decode())
+            # Seq check
+                
+
+
+            return data
         
         except (ValueError, KeyError) as e:
             print(f"[WARNING] Ignored a bad package: {e}")
