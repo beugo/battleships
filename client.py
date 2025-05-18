@@ -6,22 +6,24 @@ from prompt_toolkit.patch_stdout import patch_stdout
 from utils import *
 from client_ui import *
 
+
 # ─── Configuration ─────────────────────────────────────────────────────────────
 HOST = "127.0.0.1"
 PORT = 5000
 
+
 # ─── Global State ──────────────────────────────────────────────────────────────
 running = True
 
-# ─── Input Helper ─────────────────────────────────────────────────────────────
 
+# ─── Input Helper ─────────────────────────────────────────────────────────────
 def ask(label: str) -> str:
     """Prompt-toolkit wrapper that plays nicely with the receiver thread."""
     with patch_stdout():
         return prompt(label)
 
-# ─── Auth Helpers ─────────────────────────────────────────────────────────────
 
+# ─── Auth Helpers ─────────────────────────────────────────────────────────────
 def register(s) -> bool:
     """Client-side registration handshake. Returns True on success."""
     while True:
@@ -53,7 +55,6 @@ def register(s) -> bool:
             print_boxed("Registration complete!", style="cyan")
             return True
         print_boxed("Server rejected that PIN — try again.", style="red")
-
 
 def login(s) -> bool:
     """Client-side login handshake. Returns True on success."""
@@ -87,8 +88,8 @@ def login(s) -> bool:
         print_boxed("Sussy baka...", style="red")
         return False
 
-# ─── Receiver Thread ───────────────────────────────────────────────────────────
 
+# ─── Receiver Thread ───────────────────────────────────────────────────────────
 def receiver(s):
     global running
     while running:
@@ -119,8 +120,8 @@ def receiver(s):
             running = False
             break
 
-# ─── Main ─────────────────────────────────────────────────────────────────────
 
+# ─── Main ─────────────────────────────────────────────────────────────────────
 def main():
     global running
     src_port = int(sys.argv[1]) if len(sys.argv) > 1 else 0

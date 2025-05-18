@@ -4,6 +4,7 @@ import time
 from battleship import run_two_player_game_online
 from utils import *
 
+
 # ─── Shared State ───────────────────────────────────────────────────────────
 incoming_connections = []   # List of (conn, addr)
 player_queue = []           # List of Player instances
@@ -11,6 +12,7 @@ t_lock = threading.Lock()  # Protects both lists
 running = False
 current_state = None
 all_player_logins = {}
+
 
 # ─── Player Class ────────────────────────────────────────────────────────────
 class Player:
@@ -23,6 +25,7 @@ class Player:
         self.latest_coord = None
         self.msg_lock = threading.Lock()
         self.connected = True
+
 
 # ─── Game State Class ────────────────────────────────────────────────────────
 class GameState:
@@ -57,6 +60,7 @@ def receiver_thread(server_sock):
         except OSError:
             break
 
+
 # ─── Queue Maintainer Thread ─────────────────────────────────────────────────
 def queue_maintainer_thread():
     """
@@ -72,6 +76,7 @@ def queue_maintainer_thread():
                 print(f"[INFO] A client-handler has been assigned to {addr}, now trying to log this client in.")
                 
         time.sleep(0.5)
+
 
 # ─── Client Handler Thread ────────────────────────────────────────────────────
 def client_handler(player: Player):
@@ -191,6 +196,7 @@ def client_handler(player: Player):
         except:
             pass
 
+
 # ─── Match & Rematch Logic ───────────────────────────────────────────────────
 def start_match(p1: Player, p2: Player, current_state: GameState) -> str:
     """
@@ -274,6 +280,17 @@ def handle_connection_lost(p1, p2):
 
     return False
 
+def disconnect_player(player: Player, message: str = "You are being disconnected..."):
+    with t_lock:
+        if player in player_queue:
+            player_queue.remove(player)
+    try:
+        send_package(player.conn, MessageTypes.SHUTDOWN, message)
+        player.conn.close()
+    except:
+        pass # doesn't really matter if we can't reach the client to shut them down
+
+
 # ─── Announcements ─────────────────────────────────────────────────────
 def _safe_send(player, *args):
     try:
@@ -313,7 +330,6 @@ def broadcast(
             _safe_send(p, MessageTypes.BOARD, board, show_ships)
         if msg is not None:
             _safe_send(p, msg_type, msg)
-
 
 def notify_spectators(defender_board, result, ships_sunk, attacker):
     """
@@ -355,6 +371,7 @@ def resend_queue_pos():
             f"You are number {position} in the queue"
         ):
             position += 1
+
 
 # ─── Main Server Loop ─────────────────────────────────────────────────────────
 def main():
@@ -402,9 +419,9 @@ def main():
             r1, r2 = ask_for_rematch(p1, p2)
             with t_lock:
                 if r1 != "YES" and p1 in player_queue:
-                    player_queue.remove(p1)
+                    disconnect_player(p1)
                 if r2 != "YES" and p2 in player_queue:
-                    player_queue.remove(p2)
+                    disconnect_player(p2)
 
             broadcast(msg="A new game will start soon!", msg_type=MessageTypes.WAITING)
             resend_queue_pos()
@@ -428,6 +445,7 @@ def main():
     finally:
         server_sock.close()
         print("[INFO] Server socket closed. Exiting.")
+
 
 if __name__ == "__main__":
     main()
