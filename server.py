@@ -328,6 +328,9 @@ def resend_queue_pos():
 def main():
     global running, current_state
 
+    # Set key
+    derive_key('we_love_cs')
+
     # Set up listening socket
     server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)

@@ -76,6 +76,9 @@ def receive_messages(s):
 def main():
     global running, global_socket_reference
 
+    # Set key
+    derive_key('we_love_cs')
+
     signal.signal(signal.SIGINT, handle_sigint)
 
     source_port = int(sys.argv[1]) if len(sys.argv) > 1 else 0

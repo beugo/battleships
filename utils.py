@@ -5,6 +5,11 @@ import enum
 import zlib
 import functools
 from Crypto.Cipher import AES
+import hashlib
+
+# ─── Global Variables ──────────────────────────────────────────────────────────
+
+key = None
 
 # ─── Frame Class ───────────────────────────────────────────────────────────────
 
@@ -24,16 +29,20 @@ class Frame:
 
 # ─── Encryption: AES-CTR ────────────────────────────────────────────────────────
 
-key = b'sixteen byte key'
+def derive_key(password):
+    global key
+    key = hashlib.sha256(password.encode()).digest()
 
-def aes_ctr_encrypt(key, data):
+def aes_ctr_encrypt(data):
+    global key
     cipher = AES.new(key, AES.MODE_CTR)
     ct_bytes = cipher.encrypt(data)
     nonce = b64encode(cipher.nonce).decode()
     ciphertext = b64encode(ct_bytes).decode()
     return (ciphertext, nonce)
 
-def aes_ctr_decrypt(key, ciphertext, nonce):
+def aes_ctr_decrypt(ciphertext, nonce):
+    global key
     try:
         cipher = AES.new(key, AES.MODE_CTR, nonce=nonce)
         pt = cipher.decrypt(ciphertext)
@@ -135,7 +144,7 @@ def send_package(s, type: MessageTypes, *args):
     # Encrpyt
     plaintext = json.dumps(json_dict).encode()
 
-    ciphertext, nonce = aes_ctr_encrypt(key, plaintext)
+    ciphertext, nonce = aes_ctr_encrypt(plaintext)
 
     f.jsonmsg = json.dumps({
         "ciphertext": ciphertext,
@@ -174,7 +183,7 @@ def receive_package(s) -> dict:
     payload = json.loads(f.jsonmsg.decode())
     nonce = b64decode(payload['nonce'])
     ciphertext = b64decode(payload['ciphertext'])
-    plaintext = aes_ctr_decrypt(key, ciphertext, nonce)
+    plaintext = aes_ctr_decrypt(ciphertext, nonce)
     
     return json.loads(plaintext.decode())
 
