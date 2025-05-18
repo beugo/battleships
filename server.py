@@ -72,20 +72,7 @@ def queue_maintainer_thread():
         with t_lock:
             if incoming_connections:
                 conn, addr = incoming_connections.pop(0)
-                player = Player(conn, addr)
-
-                try:
-                    queue_num = len(player_queue) - 1
-                    if queue_num > 0:
-                        send_package(
-                            player.conn,
-                            MessageTypes.WAITING,
-                            f"You are number {queue_num} in the queue"
-                        )
-                except (BrokenPipeError, ConnectionResetError, OSError) as e:
-                    print(f"[INFO] Player at {addr} has disconnected before joining the queue")
-                    continue
-                
+                player = Player(conn, addr)  
                 threading.Thread(target=client_handler, args=(player,), daemon=True).start()
                 print(f"[INFO] A client-handler has been assigned to {addr}, now trying to log this client in.")
                 
