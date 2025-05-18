@@ -26,25 +26,20 @@ class Player:
 
 # ─── Game State Class ────────────────────────────────────────────────────────
 class GameState:
-    def __init__(self, p1_addr, p2_addr, board1 = None, board2 = None, current_player = None):
-        self.players = {p1_addr, p2_addr} # Stores the addresses of the two players in this game state.
-        self.board1 = board1
-        self.board2 = board2
-        self.current_player = current_player
+    def __init__(self, p1: "Player", p2: "Player"):
+        self.players        = {p1.username, p2.username}      
+        self.boards         = {p1.username: None,             
+                               p2.username: None}
+        self.current_player = None            
+
+    # convenience helpers
+    def board_of(self, user):      return self.boards[user]
+    def set_board(self, user, b):  self.boards[user] = b
     
     def update_gamestate(self, board1, board2, current_player):
         self.board1 = board1
         self.board2 = board2
         self.current_player = current_player
-
-    def replace_addr(self, old, new):
-        """Update internal sets when a player reconnects with a
-        different (ip,port)."""
-        if old in self.players:
-            self.players.remove(old)
-            self.players.add(new)
-        if self.current_player == old:
-            self.current_player = new
 
 
 # ─── Receiver Thread ─────────────────────────────────────────────────────────
@@ -155,18 +150,17 @@ def client_handler(player: Player):
             # --- CHAT ------------------------------------------------------
             if p_type == "chat":
                 msg = f"{player.username}: {package.get('msg')}"
-                send_announcement(MessageTypes.CHAT, msg)
+                broadcast(msg=msg, msg_type=MessageTypes.CHAT)
                 continue
 
             # --- NON-CHAT (commands / coords) -----------------------------
             with t_lock:
-                actively_playing = current_state and player.addr in current_state.players
+                actively_playing = current_state and player.username in current_state.players
                 placement_phase  = actively_playing and (
-                    current_state and (current_state.board1 is None or current_state.board2 is None)
+                    current_state.board_of(player.username) is None
                 )
-                turn_phase       = current_state and current_state.current_player == player.addr
+                turn_phase       = current_state and current_state.current_player == player.username
 
-            # NEW ─ let prompts such as ship-placement and rematch through
             accepting_prompt = player.my_turn       
 
             if not (placement_phase or turn_phase or accepting_prompt):
@@ -206,11 +200,11 @@ def start_match(p1: Player, p2: Player, current_state: GameState) -> str:
     game_starting_message = f"Starting match between {p1.username} and {p2.username}"
 
     print("[INFO] " + game_starting_message)
-    send_announcement(MessageTypes.WAITING, game_starting_message)
+    broadcast(msg=game_starting_message, msg_type=MessageTypes.S_MESSAGE)
 
     time.sleep(2)
 
-    return run_two_player_game_online(p1, p2, current_state, notify_spectators)
+    return run_two_player_game_online(p1, p2, current_state, notify_spectators, broadcast)
 
 def ask_for_rematch(p1: Player, p2: Player,
                     timeout: float = 15.0) -> tuple[str, str]:
@@ -281,91 +275,86 @@ def handle_connection_lost(p1, p2):
     return False
 
 # ─── Announcements ─────────────────────────────────────────────────────
-def send_announcement(message_type:MessageTypes, msg: str):
+def _safe_send(player, *args):
+    try:
+        send_package(player.conn, *args)
+        return True
+    except ConnectionError:
+        with t_lock:
+            if player in player_queue:
+                player_queue.remove(player)
+        print(f"[INFO] Removed unreachable player {player.username}")
+        return False
+    
+def broadcast(
+        *,
+        msg=None,
+        msg_type=MessageTypes.S_MESSAGE,
+        board=None,
+        show_ships=False,
+        spectators_only=False):
     """
-    Broadcast a message to every player in the queue, removing any unreachable.
+    Fan-out a message (and optionally a board) to the desired audience.
+
+    Parameters
+    ----------
+    msg_type     - Enum code (S_MESSAGE, BOARD, WAITING, …).
+    msg              - Text payload (ignored for BOARD unless you want both).
+    board / show_ships
+                     - If board is given we send a MessageTypes.BOARD first,
+                       using the supplied `show_ships` flag.
+    spectators_only  - If True we skip the first two queue slots.
     """
     with t_lock:
-        for player in list(player_queue):
-            try:
-                send_package(player.conn, message_type, msg)
-            except ConnectionError:
-                print(f"[INFO] Removing unreachable player {player.addr} from queue")
-                player_queue.remove(player)
+        targets = player_queue[2:] if spectators_only else player_queue[:]
+
+    for p in list(targets):
+        if board is not None:
+            _safe_send(p, MessageTypes.BOARD, board, show_ships)
+        if msg is not None:
+            _safe_send(p, msg_type, msg)
+
 
 def notify_spectators(defender_board, result, ships_sunk, attacker):
     """
-    Send live updates to any spectators waiting beyond the first two in queue.
-
-    - If ships_sunk is True, announce victory and return immediately.
-    - If result == "timeout", tell them whose turn was skipped.
-    - Otherwise (hit/miss/already_shot), announce the event.
-    - In all non-end cases, send the defender's updated board next.
-    - Finally, send a WAITING spinner message with their queue position.
+    Computes the right message(s) then delegates to broadcast().
     """
-    with t_lock:
-        spectators = player_queue[2:]
+    if ships_sunk:
+        broadcast(
+            msg=f"{attacker.username} has won!",
+            msg_type=MessageTypes.S_MESSAGE,
+            spectators_only=True
+        )
+        return
 
-    for idx, spec in enumerate(spectators, start=1):
-        try:
-            # 1) Header
-            send_package(spec.conn, MessageTypes.S_MESSAGE, "Incoming Live Game Update:")
+    if result == "timeout":
+        text = f"{attacker.username} timed out; turn skipped."
+    else:
+        verb = {"hit": "HIT", "miss": "MISSED", "already_shot": "ALREADY SHOT"}[result]
+        text = f"{attacker.username} has {verb} the defender."
 
-            # 2) End-of-game?
-            if ships_sunk:
-                send_package(
-                    spec.conn,
-                    MessageTypes.S_MESSAGE,
-                    f"{attacker.addr} has won!"
-                )
-                return
+    # message + updated defender board
+    broadcast(msg=text,
+              msg_type=MessageTypes.S_MESSAGE,
+              board=defender_board,
+              show_ships=False,
+              spectators_only=True)
 
-            # 3) Timeout
-            if result == "timeout":
-                send_package(
-                    spec.conn,
-                    MessageTypes.S_MESSAGE,
-                    f"{attacker.addr} timed out; turn skipped."
-                )
-            else:
-                # 4) Hit / Miss / Already shot
-                verb = {
-                    "hit": "has HIT the defender.",
-                    "miss": "has MISSED the defender.",
-                    "already_shot": "has ALREADY SHOT at the defender."
-                }.get(result)
-                if verb:
-                    send_package(
-                        spec.conn,
-                        MessageTypes.S_MESSAGE,
-                        f"{attacker.addr} {verb}"
-                    )
-
-            # 5) Send the defender's updated board
-            if defender_board is not None:
-                send_package(spec.conn, MessageTypes.BOARD, defender_board, False)
-
-            # 6) Spinner / queue position
-            send_package(
-                spec.conn,
-                MessageTypes.WAITING,
-                f"You are number {idx} in the queue"
-            )
-
-        except ConnectionError:
-            with t_lock:
-                if spec in player_queue:
-                    player_queue.remove(spec)
+    # finally refresh queue positions (spinner)
+    resend_queue_pos()
 
 def resend_queue_pos():
     with t_lock:
-        spectators = player_queue[2:]
-    for i, spec in enumerate(spectators):
-        try:
-            send_package(spec.conn, MessageTypes.WAITING, f"You are number {i+1} in the queue")
-        except ConnectionError:
-            print(f"[INFO] Removing unreachable player {spec.addr} from queue")
-            player_queue.remove(spec)
+        spectators = list(player_queue[2:])
+
+    position = 1
+    for spec in spectators:
+        if _safe_send(
+            spec,
+            MessageTypes.WAITING,
+            f"You are number {position} in the queue"
+        ):
+            position += 1
 
 # ─── Main Server Loop ─────────────────────────────────────────────────────────
 def main():
@@ -396,8 +385,8 @@ def main():
                 time.sleep(1)
                 continue
 
-            if (current_state is None) or (current_state.players != {p1.addr, p2.addr}): # (no game) OR (different players)
-                current_state = GameState(p1.addr, p2.addr)
+            if (current_state is None) or (current_state.players != {p1.username, p2.username}): # (no game) OR (different players)
+                current_state = GameState(p1, p2)
 
             # Play a match
             result = start_match(p1, p2, current_state)
@@ -417,7 +406,7 @@ def main():
                 if r2 != "YES" and p2 in player_queue:
                     player_queue.remove(p2)
 
-            send_announcement(MessageTypes.WAITING, "A new game will start soon!")
+            broadcast(msg="A new game will start soon!", msg_type=MessageTypes.WAITING)
             resend_queue_pos()
             time.sleep(3)
 
@@ -426,7 +415,7 @@ def main():
         running = False
 
         # Notify all waiting/incoming players
-        send_announcement(MessageTypes.SHUTDOWN, "Server is shutting down.")
+        broadcast(msg="Server is shutting down.", msg_type=MessageTypes.SHUTDOWN)
         # Also notify those not yet in queue
         with t_lock:
             for conn, addr in incoming_connections:

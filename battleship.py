@@ -395,33 +395,40 @@ def network_place_ships(board, player):
 
 # ─── MAIN GAME LOGIC ───────────────────────────────────────────────────────────
 @detects_lost_connection
-def run_two_player_game_online(p1, p2, gamestate, notify_spectators):
+def run_two_player_game_online(p1, p2, gamestate, notify_spectators, broadcast):
 
-    board1 = Board(BOARD_SIZE)
-    board2 = Board(BOARD_SIZE)
+    for player in (p1, p2):
+        if gamestate.board_of(player.username) is None:
+            board = Board(BOARD_SIZE)
 
-    if gamestate.board1 is None:
-        send_package(p2.conn, MessageTypes.WAITING, "Waiting for opponent to place their ships...")
-        testing_place_ships(board1, p1)  # TODO: replace with network_place_ships before submission
-        gamestate.board1 = board1
-    else:
-        board1 = gamestate.board1
+            opponent = p2 if player is p1 else p1
+            send_package(opponent.conn, MessageTypes.WAITING, "Please wait for your opponent to place their ships...")
 
-    if gamestate.board2 is None:
-        send_package(p1.conn, MessageTypes.WAITING, "Waiting for opponent to place their ships...")
-        testing_place_ships(board2, p2)
-        gamestate.board2 = board2
-    else:
-        board2 = gamestate.board2
+            broadcast(
+                msg=f"{player.username} is placing their ships...",
+                msg_type=MessageTypes.S_MESSAGE,
+                board=None,
+                show_ships=False,
+                spectators_only=True
+            )
+            testing_place_ships(board, player)
+            gamestate.set_board(player.username, board)
+            broadcast(
+                msg=f"{player.username} has finished placing their ships...",
+                msg_type=MessageTypes.S_MESSAGE,
+                board=None,
+                show_ships=False,
+                spectators_only=True
+            )
 
     if gamestate.current_player is None:
-        gamestate.current_player = p1.addr
+        gamestate.current_player = p1.username
 
     while True:
         attacker, defender = (
-            (p1, p2) if gamestate.current_player == p1.addr else (p2, p1)
+            (p1, p2) if gamestate.current_player == p1.username else (p2, p1)
         )
-        defender_board = board2 if attacker is p1 else board1
+        defender_board = gamestate.board_of(defender.username)
 
         send_package(attacker.conn, MessageTypes.PROMPT, "Enter coordinate to fire at (e.g. B5) or 'Ctrl + C' to forfeit:")
         send_package(defender.conn, MessageTypes.WAITING, "Waiting for opponent to fire...")
@@ -431,7 +438,8 @@ def run_two_player_game_online(p1, p2, gamestate, notify_spectators):
         if guess is None:
             send_package(attacker.conn, MessageTypes.S_MESSAGE, "You took too long. Skipping your turn.")
             send_package(defender.conn, MessageTypes.S_MESSAGE, "Opponent time out. It is now your turn.")
-            gamestate.current_player = p2.addr if gamestate.current_player == p1.addr else p1.addr
+            gamestate.current_player = p2.username if gamestate.current_player == p1.username else p1.username
+            notify_spectators(defender_board, "timeout", False, attacker)
             continue
 
         guess = guess.strip().upper()
@@ -456,22 +464,22 @@ def run_two_player_game_online(p1, p2, gamestate, notify_spectators):
 
             elif result == "already_shot":
                 send_package(attacker.conn, MessageTypes.S_MESSAGE, "Already fired there.")
+                notify_spectators(defender_board, result, False, attacker)
+                continue
 
             ships_sunk = defender_board.all_ships_sunk()
             notify_spectators(defender_board, result, ships_sunk, attacker)
 
-            if defender_board.all_ships_sunk():
+            if ships_sunk:
                 send_package(attacker.conn, MessageTypes.RESULT, "Congratulations! You win.")
                 send_package(defender.conn, MessageTypes.RESULT, "You lost.")
                 return "done"
 
-            gamestate.current_player = (
-                p2.addr if gamestate.current_player == p1.addr else p1.addr
-            )
-            gamestate.update_gamestate(board1, board2, gamestate.current_player)
+            gamestate.current_player = defender.username
 
         except ValueError as e:
             send_package(attacker.conn, MessageTypes.S_MESSAGE, f"Invalid input: {e}")
+            continue
         
 
 if __name__ == "__main__":
