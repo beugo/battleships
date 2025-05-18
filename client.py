@@ -14,7 +14,7 @@ PORT = 5000
 
 # ─── Global State ──────────────────────────────────────────────────────────────
 running = True
-
+seq_state = {"seq": 0}
 
 # ─── Input Helper ─────────────────────────────────────────────────────────────
 def ask(label: str) -> str:
@@ -29,8 +29,8 @@ def register(s) -> bool:
     while True:
         print_boxed("Choose a username:", style="green")
         username = ask(">> ")
-        send_package(s, MessageTypes.COMMAND, f"REGISTER {username}")
-        reply = receive_package(s)
+        send_package(s, MessageTypes.COMMAND, f"REGISTER {username}", seq=seq_state)
+        reply = receive_package(s, seq_state)
         if not reply:
             return False
         match reply.get("msg"):
@@ -49,8 +49,8 @@ def register(s) -> bool:
         if not pin.isdigit() or not 4 <= len(pin) <= 6:
             print_boxed("PIN must be 4-6 digits.", style="red")
             continue
-        send_package(s, MessageTypes.COMMAND, f"SETPIN {pin}")
-        reply = receive_package(s)
+        send_package(s, MessageTypes.COMMAND, f"SETPIN {pin}", seq=seq_state)
+        reply = receive_package(s, seq_state)
         if reply and reply.get("msg") == "REGISTRATION_SUCCESS":
             print_boxed("Registration complete!", style="cyan")
             return True
@@ -61,8 +61,8 @@ def login(s) -> bool:
     while True:
         print_boxed("Username:", style="green")
         username = ask(">> ")
-        send_package(s, MessageTypes.COMMAND, f"LOGIN {username}")
-        reply = receive_package(s)
+        send_package(s, MessageTypes.COMMAND, f"LOGIN {username}", seq=seq_state)
+        reply = receive_package(s, seq_state)
         if not reply:
             return False
         status = reply.get("msg")
@@ -77,8 +77,8 @@ def login(s) -> bool:
         for attempt in range(1, 4):
             print_boxed("PIN:", style="green")
             pin = ask(">> ")
-            send_package(s, MessageTypes.COMMAND, f"PIN {pin}")
-            reply = receive_package(s)
+            send_package(s, MessageTypes.COMMAND, f"PIN {pin}", seq=seq_state)
+            reply = receive_package(s, seq_state)
             if not reply:
                 return False
             if reply.get("msg") == "LOGIN_SUCCESS":
@@ -94,7 +94,7 @@ def receiver(s):
     global running
     while running:
         try:
-            package = receive_package(s)
+            package = receive_package(s, seq_state)
             if not package:
                 running = False
                 break
@@ -151,13 +151,13 @@ def main():
             while running:
                 cmd = ask(">> ")
                 if cmd.startswith("CHAT "):
-                    send_package(s, MessageTypes.CHAT, cmd[5:])
+                    send_package(s, MessageTypes.CHAT, cmd[5:], seq=seq_state)
                 else:
-                    send_package(s, MessageTypes.COMMAND, cmd)
+                    send_package(s, MessageTypes.COMMAND, cmd, seq=seq_state)
         except KeyboardInterrupt:
             print_boxed("[INFO] Ctrl+C pressed — quitting…", style="yellow")
             try:
-                send_package(s, MessageTypes.COMMAND, "quit", False)
+                send_package(s, MessageTypes.COMMAND, "quit", seq=seq_state)
             except Exception:
                 pass
             running = False

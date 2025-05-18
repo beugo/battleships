@@ -25,7 +25,7 @@ class Player:
         self.latest_coord = None
         self.msg_lock = threading.Lock()
         self.connected = True
-
+        self.seq = 0
 
 # ─── Game State Class ────────────────────────────────────────────────────────
 class GameState:
@@ -38,12 +38,6 @@ class GameState:
     # convenience helpers
     def board_of(self, user):      return self.boards[user]
     def set_board(self, user, b):  self.boards[user] = b
-    
-    def update_gamestate(self, board1, board2, current_player):
-        self.board1 = board1
-        self.board2 = board2
-        self.current_player = current_player
-
 
 # ─── Receiver Thread ─────────────────────────────────────────────────────────
 def receiver_thread(server_sock):
@@ -94,7 +88,7 @@ def client_handler(player: Player):
     try:
         # ── 1.  Login / Register ────────────────────────────────────────────
         while running and player.username is None and player.pin is None:
-            package = receive_package(player.conn)
+            package = receive_package(player)
             if not package:
                 raise ConnectionError("Lost during login")
 
@@ -102,41 +96,41 @@ def client_handler(player: Player):
 
             if cmd == "REGISTER":
                 if username in all_player_logins:
-                    send_package(player.conn, MessageTypes.S_MESSAGE, "USERNAME_TAKEN")
+                    send_package(player, MessageTypes.S_MESSAGE, "USERNAME_TAKEN")
                     continue
-                send_package(player.conn, MessageTypes.S_MESSAGE, "USERNAME_OK")
-                pin_package = receive_package(player.conn)
+                send_package(player, MessageTypes.S_MESSAGE, "USERNAME_OK")
+                pin_package = receive_package(player)
                 pin = pin_package.get("coord").split()[-1]
                 all_player_logins[username] = pin
-                send_package(player.conn, MessageTypes.S_MESSAGE, "REGISTRATION_SUCCESS")
+                send_package(player, MessageTypes.S_MESSAGE, "REGISTRATION_SUCCESS")
                 player.username, player.pin = username, pin
 
 
             elif cmd == "LOGIN":
                 if username not in all_player_logins:
-                    send_package(player.conn, MessageTypes.S_MESSAGE, "USER_NOT_FOUND")
+                    send_package(player, MessageTypes.S_MESSAGE, "USER_NOT_FOUND")
                     continue
-                send_package(player.conn, MessageTypes.S_MESSAGE, "USERNAME_OK")
+                send_package(player, MessageTypes.S_MESSAGE, "USERNAME_OK")
                 for _ in range(3):
-                    pin_package = receive_package(player.conn)
+                    pin_package = receive_package(player)
                     pin_try = pin_package.get("coord").split()[-1]
                     if pin_try == all_player_logins[username]:
-                        send_package(player.conn, MessageTypes.S_MESSAGE, "LOGIN_SUCCESS")
+                        send_package(player, MessageTypes.S_MESSAGE, "LOGIN_SUCCESS")
                         player.username, player.pin = username, pin_try
                         break
-                    send_package(player.conn, MessageTypes.S_MESSAGE, "LOGIN_FAILURE")
+                    send_package(player, MessageTypes.S_MESSAGE, "LOGIN_FAILURE")
                 else:
                     continue
             
 
             else:
-                send_package(player.conn, MessageTypes.S_MESSAGE, "You must either login or register before joining")
+                send_package(player, MessageTypes.S_MESSAGE, "You must either login or register before joining")
 
         role_msg = (
             "Success! Waiting for your opponent…" if len(player_queue) < 2
             else f"You are number {len(player_queue)-1} in the queue - you'll see live updates."
         )
-        send_package(player.conn, MessageTypes.WAITING, role_msg)
+        send_package(player, MessageTypes.WAITING, role_msg)
 
 
 
@@ -146,7 +140,7 @@ def client_handler(player: Player):
 
         # ── 3.  Main receive loop ───────────────────────────────────────────
         while running and player.connected:
-            package = receive_package(player.conn)
+            package = receive_package(player)
             if not package:
                 raise ConnectionError("disconnect")
 
@@ -169,7 +163,7 @@ def client_handler(player: Player):
             accepting_prompt = player.my_turn       
 
             if not (placement_phase or turn_phase or accepting_prompt):
-                send_package(player.conn, MessageTypes.S_MESSAGE,
+                send_package(player, MessageTypes.S_MESSAGE,
                             "Please wait, it isn't your turn.")
                 continue
 
@@ -179,7 +173,7 @@ def client_handler(player: Player):
                 with player.msg_lock:
                     player.latest_coord = coord
             else:
-                send_package(player.conn, MessageTypes.S_MESSAGE,
+                send_package(player, MessageTypes.S_MESSAGE,
                              "Invalid move payload.")
 
     except ConnectionError:
@@ -222,7 +216,7 @@ def ask_for_rematch(p1: Player, p2: Player,
     # 1) prompt
     for p in (p1, p2):
         try:
-            send_package(p.conn, MessageTypes.PROMPT,
+            send_package(p, MessageTypes.PROMPT,
                          "Play again? (yes/no)")
         except ConnectionError:
             pass
@@ -238,7 +232,7 @@ def ask_for_rematch(p1: Player, p2: Player,
         replies[p] = "YES" if ans == "YES" else "NO"
 
         try:
-            send_package(p.conn, MessageTypes.WAITING,
+            send_package(p, MessageTypes.WAITING,
                          "Waiting for your opponent…")
         except ConnectionError:
             pass
@@ -255,7 +249,7 @@ def handle_connection_lost(p1, p2):
     winner, loser = determine_winner_and_loser(p1, p2)
 
     send_package(
-        winner.conn, 
+        winner, 
         MessageTypes.WAITING, 
         "Your opponent has disconnected, please wait whilst we try to reconnect them."
     )
@@ -285,7 +279,7 @@ def disconnect_player(player: Player, message: str = "You are being disconnected
         if player in player_queue:
             player_queue.remove(player)
     try:
-        send_package(player.conn, MessageTypes.SHUTDOWN, message)
+        send_package(player, MessageTypes.SHUTDOWN, message)
         player.conn.close()
     except:
         pass # doesn't really matter if we can't reach the client to shut them down
@@ -294,7 +288,7 @@ def disconnect_player(player: Player, message: str = "You are being disconnected
 # ─── Announcements ─────────────────────────────────────────────────────
 def _safe_send(player, *args):
     try:
-        send_package(player.conn, *args)
+        send_package(player, *args)
         return True
     except ConnectionError:
         with t_lock:
@@ -440,7 +434,8 @@ def main():
         with t_lock:
             for conn, addr in incoming_connections:
                 try:
-                    send_package(conn, MessageTypes.SHUTDOWN, "Server is shutting down.")
+                    temp_p = Player(conn, addr)
+                    send_package(temp_p, MessageTypes.SHUTDOWN, "Server is shutting down.")
                     conn.close()
                 except:
                     pass

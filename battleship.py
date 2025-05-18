@@ -313,13 +313,13 @@ def testing_place_ships(board, player):
         ("Single Guy in the Water With Some Floaties", 1)
     ]
 
-    send_package(player.conn, MessageTypes.S_MESSAGE, "Please place your ships manually on the board.")
+    send_package(player, MessageTypes.S_MESSAGE, "Please place your ships manually on the board.")
 
     for ship_name, ship_size in TESTING_SHIPS:
         while True:
-            send_package(player.conn, MessageTypes.BOARD, board, True)
-            send_package(player.conn, MessageTypes.S_MESSAGE, f"Placing your {ship_name} (size {ship_size})")
-            send_package(player.conn, MessageTypes.PROMPT, "Enter starting coordinate followed by orientation (e.g. A1 V):")
+            send_package(player, MessageTypes.BOARD, board, True)
+            send_package(player, MessageTypes.S_MESSAGE, f"Placing your {ship_name} (size {ship_size})")
+            send_package(player, MessageTypes.PROMPT, "Enter starting coordinate followed by orientation (e.g. A1 V):")
 
             while True:
                 placement = wait_for_message(player)
@@ -338,7 +338,7 @@ def testing_place_ships(board, player):
                 orientation = 0 if orientation_str == "H" else 1
 
             except ValueError as e:
-                send_package(player.conn, MessageTypes.S_MESSAGE, f"[!] Invalid coordinate: {e}")
+                send_package(player, MessageTypes.S_MESSAGE, f"[!] Invalid coordinate: {e}")
                 continue
 
             if board.can_place_ship(row, col, ship_size, orientation):
@@ -349,18 +349,18 @@ def testing_place_ships(board, player):
                 })
                 break
             else:
-                send_package(player.conn, MessageTypes.S_MESSAGE, f"[!] Cannot place {ship_name} at {coord_str} (orientation={orientation_str}). Try again.")
+                send_package(player, MessageTypes.S_MESSAGE, f"[!] Cannot place {ship_name} at {coord_str} (orientation={orientation_str}). Try again.")
                 
 
 # ─── ACTUAL NETWORK SHIP PLACEMENT ─────────────────────────────────────────────
 def network_place_ships(board, player):
-    send_package(player.conn, MessageTypes.S_MESSAGE, "Please place your ships manually on the board.")
+    send_package(player, MessageTypes.S_MESSAGE, "Please place your ships manually on the board.")
 
     for ship_name, ship_size in SHIPS:
         while True:
-            send_package(player.conn, MessageTypes.BOARD, board, True)
-            send_package(player.conn, MessageTypes.S_MESSAGE, f"Placing your {ship_name} (size {ship_size})")
-            send_package(player.conn, MessageTypes.PROMPT, "Enter starting coordinate followed by orientation (e.g. A1 V):")
+            send_package(player, MessageTypes.BOARD, board, True)
+            send_package(player, MessageTypes.S_MESSAGE, f"Placing your {ship_name} (size {ship_size})")
+            send_package(player, MessageTypes.PROMPT, "Enter starting coordinate followed by orientation (e.g. A1 V):")
 
             while True:
                 placement = wait_for_message(player)
@@ -379,7 +379,7 @@ def network_place_ships(board, player):
                 orientation = 0 if orientation_str == "H" else 1
 
             except ValueError as e:
-                send_package(player.conn, MessageTypes.S_MESSAGE, f"[!] Invalid coordinate: {e}")
+                send_package(player, MessageTypes.S_MESSAGE, f"[!] Invalid coordinate: {e}")
                 continue
 
             if board.can_place_ship(row, col, ship_size, orientation):
@@ -390,7 +390,7 @@ def network_place_ships(board, player):
                 })
                 break
             else:
-                send_package(player.conn, MessageTypes.S_MESSAGE, f"[!] Cannot place {ship_name} at {coord_str} (orientation={orientation_str}). Try again.")
+                send_package(player, MessageTypes.S_MESSAGE, f"[!] Cannot place {ship_name} at {coord_str} (orientation={orientation_str}). Try again.")
                 
 
 # ─── MAIN GAME LOGIC ───────────────────────────────────────────────────────────
@@ -402,7 +402,7 @@ def run_two_player_game_online(p1, p2, gamestate, notify_spectators, broadcast):
             board = Board(BOARD_SIZE)
 
             opponent = p2 if player is p1 else p1
-            send_package(opponent.conn, MessageTypes.WAITING, "Please wait for your opponent to place their ships...")
+            send_package(opponent, MessageTypes.WAITING, "Please wait for your opponent to place their ships...")
 
             broadcast(
                 msg=f"{player.username} is placing their ships...",
@@ -430,14 +430,14 @@ def run_two_player_game_online(p1, p2, gamestate, notify_spectators, broadcast):
         )
         defender_board = gamestate.board_of(defender.username)
 
-        send_package(attacker.conn, MessageTypes.PROMPT, "Enter coordinate to fire at (e.g. B5) or 'Ctrl + C' to forfeit:")
-        send_package(defender.conn, MessageTypes.WAITING, "Waiting for opponent to fire...")
+        send_package(attacker, MessageTypes.PROMPT, "Enter coordinate to fire at (e.g. B5) or 'Ctrl + C' to forfeit:")
+        send_package(defender, MessageTypes.WAITING, "Waiting for opponent to fire...")
 
         guess = wait_for_message(attacker)
         
         if guess is None:
-            send_package(attacker.conn, MessageTypes.S_MESSAGE, "You took too long. Skipping your turn.")
-            send_package(defender.conn, MessageTypes.S_MESSAGE, "Opponent time out. It is now your turn.")
+            send_package(attacker, MessageTypes.S_MESSAGE, "You took too long. Skipping your turn.")
+            send_package(defender, MessageTypes.S_MESSAGE, "Opponent time out. It is now your turn.")
             gamestate.current_player = p2.username if gamestate.current_player == p1.username else p1.username
             notify_spectators(defender_board, "timeout", False, attacker)
             continue
@@ -448,22 +448,22 @@ def run_two_player_game_online(p1, p2, gamestate, notify_spectators, broadcast):
             row, col = parse_coordinate(guess)
             result, sunk_name = defender_board.fire_at(row, col)
 
-            send_package(attacker.conn, MessageTypes.BOARD, defender_board, False)
+            send_package(attacker, MessageTypes.BOARD, defender_board, False)
 
             if result == "hit":
                 if sunk_name:
-                    send_package(attacker.conn, MessageTypes.S_MESSAGE, f"HIT! You blew up the {sunk_name}!")
-                    send_package(defender.conn, MessageTypes.S_MESSAGE, f"HIT! The other player has blown up your {sunk_name}!")
+                    send_package(attacker, MessageTypes.S_MESSAGE, f"HIT! You blew up the {sunk_name}!")
+                    send_package(defender, MessageTypes.S_MESSAGE, f"HIT! The other player has blown up your {sunk_name}!")
                 else:
-                    send_package(attacker.conn, MessageTypes.S_MESSAGE, "HIT!")
-                    send_package(defender.conn, MessageTypes.S_MESSAGE, "You were HIT!")
+                    send_package(attacker, MessageTypes.S_MESSAGE, "HIT!")
+                    send_package(defender, MessageTypes.S_MESSAGE, "You were HIT!")
 
             elif result == "miss":
-                send_package(attacker.conn, MessageTypes.S_MESSAGE, "MISS!")
-                send_package(defender.conn, MessageTypes.S_MESSAGE, "The attacker MISSED!")
+                send_package(attacker, MessageTypes.S_MESSAGE, "MISS!")
+                send_package(defender, MessageTypes.S_MESSAGE, "The attacker MISSED!")
 
             elif result == "already_shot":
-                send_package(attacker.conn, MessageTypes.S_MESSAGE, "Already fired there.")
+                send_package(attacker, MessageTypes.S_MESSAGE, "Already fired there.")
                 notify_spectators(defender_board, result, False, attacker)
                 continue
 
@@ -471,14 +471,14 @@ def run_two_player_game_online(p1, p2, gamestate, notify_spectators, broadcast):
             notify_spectators(defender_board, result, ships_sunk, attacker)
 
             if ships_sunk:
-                send_package(attacker.conn, MessageTypes.RESULT, "Congratulations! You win.")
-                send_package(defender.conn, MessageTypes.RESULT, "You lost.")
+                send_package(attacker, MessageTypes.RESULT, "Congratulations! You win.")
+                send_package(defender, MessageTypes.RESULT, "You lost.")
                 return "done"
 
             gamestate.current_player = defender.username
 
         except ValueError as e:
-            send_package(attacker.conn, MessageTypes.S_MESSAGE, f"Invalid input: {e}")
+            send_package(attacker, MessageTypes.S_MESSAGE, f"Invalid input: {e}")
             continue
         
 
