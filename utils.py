@@ -1,3 +1,4 @@
+import time
 import struct
 import json
 import enum
@@ -204,3 +205,47 @@ def determine_winner_and_loser(p1, p2):
         return p2, p1
     else:
         return p1, p2
+    
+def wait_for_message(player,
+                     timeout: float = 30.0,
+                     allowed: tuple[str, ...] | None = None) -> str | None:
+    """
+    Block (with polling) until the player has typed something or the
+    timeout elapses.
+
+    * `allowed` – optional tuple of accepted replies (case-insensitive).
+                  If given, the first match (UPPER-CASE) is returned;
+                  anything else is treated as 'invalid' and we keep
+                  waiting.  If the timer expires we return None.
+
+    Returns the raw input string (or the validated UPPER-CASE variant
+    if `allowed` was supplied), or None on timeout.
+
+    Raises ConnectionError if the socket drops.
+    """
+    player.my_turn = True          # opens the gate in client_handler
+    start = time.time()
+
+    while time.time() - start < timeout:
+        if not player.connected:
+            raise ConnectionError
+
+        with player.msg_lock:
+            if player.latest_coord is not None:
+                raw = player.latest_coord.strip()
+                player.latest_coord = None
+
+                if allowed is None:
+                    player.my_turn = False
+                    return raw            # normal gameplay / placement
+
+                cand = raw.upper()
+                if cand in allowed:
+                    player.my_turn = False
+                    return cand           # validated prompt reply
+                # else: garbage – keep looping until timeout
+
+        time.sleep(0.05)
+
+    player.my_turn = False
+    return None
