@@ -43,13 +43,9 @@ def aes_ctr_encrypt(data):
 
 def aes_ctr_decrypt(ciphertext, nonce):
     global key
-    try:
-        cipher = AES.new(key, AES.MODE_CTR, nonce=nonce)
-        pt = cipher.decrypt(ciphertext)
-        return pt
-    
-    except (ValueError, KeyError):
-        pass
+    cipher = AES.new(key, AES.MODE_CTR, nonce=nonce)
+    pt = cipher.decrypt(ciphertext)
+    return pt
 
 # ─── Message Types ─────────────────────────────────────────────────────────────
 
@@ -166,26 +162,33 @@ def send_package(s, type: MessageTypes, *args):
         raise ConnectionError(f"send_package failed: {e}")
     
 def receive_package(s) -> dict:
-    f = Frame()
+    while True:
+        f = Frame()
+        try:
+            # Receive and unpack
+            header = _recv_exact(s, 8)
+            f.unpack_header(header)
+            f.jsonmsg = _recv_exact(s, f.length)
 
-    # Receive and unpack
-    header = _recv_exact(s, 8)
-    f.unpack_header(header)
-    f.jsonmsg = _recv_exact(s, f.length)
+            # Checksum
+            expected_checksum = f.checksum
+            f.checksum = 0
+            if expected_checksum != zlib.crc32(f.pack()):
+                raise ValueError("Corrupted packet received.")
+            
+            # Decrypt
+            payload = json.loads(f.jsonmsg.decode())
+            nonce = b64decode(payload['nonce'])
+            ciphertext = b64decode(payload['ciphertext'])
+            plaintext = aes_ctr_decrypt(ciphertext, nonce)
 
-    # Checksum
-    expected_checksum = f.checksum
-    f.checksum = 0
-    if expected_checksum != zlib.crc32(f.pack()):
-        raise ValueError("Corrupted packet received.")
-    
-    # Decrypt
-    payload = json.loads(f.jsonmsg.decode())
-    nonce = b64decode(payload['nonce'])
-    ciphertext = b64decode(payload['ciphertext'])
-    plaintext = aes_ctr_decrypt(ciphertext, nonce)
-    
-    return json.loads(plaintext.decode())
+            return json.loads(plaintext.decode())
+        
+        except (ValueError, KeyError) as e:
+            print(f"[WARNING] Ignored a bad package: {e}")
+            continue
+
+# ─── Miscellaneous Utility ─────────────────────────────────────────────────────
 
 def determine_winner_and_loser(p1, p2):
     """
