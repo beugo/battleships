@@ -305,24 +305,6 @@ def run_single_player_game_locally():
 
         except ValueError as e:
             print("  >> Invalid input:", e)
-
-def wait_for_message(player):
-    """
-    Reads the input from the player when available.
-    Only gives 30 seconds before returning.
-    """
-    player.my_turn = True
-    start = time.time()
-    while time.time() - start < 30.0:
-        if not player.connected:
-            raise ConnectionError
-        with player.msg_lock:
-            if player.latest_coord is not None:
-                coord = player.latest_coord
-                player.latest_coord = None
-                return coord
-    player.my_turn = False
-    return None
     
 # ─── TESTING SHIP PLACEMENT ────────────────────────────────────────────────────
 def testing_place_ships(board, player):

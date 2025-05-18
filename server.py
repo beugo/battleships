@@ -163,14 +163,17 @@ def client_handler(player: Player):
                 continue
 
             # --- NON-CHAT (commands / coords) -----------------------------
-            # Find out if this player is actively playing
             with t_lock:
                 actively_playing = current_state and player.addr in current_state.players
                 placement_phase  = actively_playing and (
-                    current_state.board1 is None or current_state.board2 is None)
+                    current_state and (current_state.board1 is None or current_state.board2 is None)
+                )
+                turn_phase       = current_state and current_state.current_player == player.addr
 
-            if not (placement_phase or
-                    (current_state and current_state.current_player == player.addr)):
+            # NEW ─ let prompts such as ship-placement and rematch through
+            accepting_prompt = player.my_turn       
+
+            if not (placement_phase or turn_phase or accepting_prompt):
                 send_package(player.conn, MessageTypes.S_MESSAGE,
                             "Please wait, it isn't your turn.")
                 continue
@@ -209,62 +212,42 @@ def start_match(p1: Player, p2: Player, current_state: GameState) -> str:
     print("[INFO] " + game_starting_message)
     send_announcement(MessageTypes.WAITING, game_starting_message)
 
+    time.sleep(2)
+
     return run_two_player_game_online(p1, p2, current_state, notify_spectators)
 
-def ask_for_rematch(p1: Player, p2: Player, timeout: float = 15.0) -> tuple[str, str]:
+def ask_for_rematch(p1: Player, p2: Player,
+                    timeout: float = 15.0) -> tuple[str, str]:
     """
-    Prompt p1 and p2 simultaneously for a rematch.
-    Each has `timeout` seconds to reply with "YES" or "NO".
-    As soon as one replies, they get a WAITING message.
-    Any socket error or timeout yields "NO".
-    Returns (resp1, resp2) in uppercase.
+    Prompt both players for a rematch.
+    Uses the same COMMAND channel + latest_coord mechanism as gameplay.
+    Anything but YES counts as NO. 15 s overall timeout.
     """
-    players = [p1, p2]
-    responses = {p1: "NO", p2: "NO"}
-
-    for p in players:
+    # 1) prompt
+    for p in (p1, p2):
         try:
-            send_package(
-                p.conn,
-                MessageTypes.PROMPT,
-                "Want to play again? (yes/no)",
-            )
-        except ConnectionError:
-            print(f"[INFO] Could not prompt {p.addr}, defaulting to NO")
-
-    start = time.time()
-
-    for p in players:
-        remaining = timeout - (time.time() - start)
-        if remaining <= 0:
-            continue
-
-        p.conn.settimeout(remaining)
-        try:
-            package = receive_package(p.conn)
-            resp = package.get("coord", "").strip().upper()
-            if resp not in ("YES", "NO"):
-                resp = "NO"
-        except socket.timeout:
-            resp = "NO"
-        except ConnectionError:
-            resp = "NO"
-        finally:
-            # restore blocking mode
-            p.conn.settimeout(None)
-
-        responses[p] = resp
-
-        try:
-            send_package(
-                p.conn,
-                MessageTypes.WAITING,
-                "Waiting for your opponent to decide..."
-            )
+            send_package(p.conn, MessageTypes.PROMPT,
+                         "Play again? (yes/no)")
         except ConnectionError:
             pass
 
-    return (responses[p1], responses[p2])
+    # 2) collect replies
+    replies = {}
+    for p in (p1, p2):
+        try:
+            ans = wait_for_message(p, timeout=timeout,
+                                   allowed=("YES", "NO"))
+        except ConnectionError:
+            ans = None
+        replies[p] = "YES" if ans == "YES" else "NO"
+
+        try:
+            send_package(p.conn, MessageTypes.WAITING,
+                         "Waiting for your opponent…")
+        except ConnectionError:
+            pass
+
+    return replies[p1], replies[p2]
 
 def handle_connection_lost(p1, p2):
     """
@@ -281,7 +264,7 @@ def handle_connection_lost(p1, p2):
         "Your opponent has disconnected, please wait whilst we try to reconnect them."
     )
 
-    print(f"[INFO] Removing disconnected player {loser.addr}")
+    print(f"[INFO] Removing disconnected player {loser.username}")
 
     with t_lock:
         if loser in player_queue:
