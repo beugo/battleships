@@ -396,8 +396,7 @@ def main():
                 player_queue.insert(0, winner)
                 player_queue.append(loser)
 
-            with t_lock:
-                broadcast(msg=f"A new game will start shortly between {player_queue[0].username} and {player_queue[1].username}", msg_type=MessageTypes.WAITING)
+            broadcast(msg=f"A new game will start shortly between {player_queue[0].username} and {player_queue[1].username}", msg_type=MessageTypes.WAITING)
             resend_queue_pos()
             time.sleep(3)
 

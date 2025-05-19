@@ -173,7 +173,7 @@ def main():
             try:
                 s.conn.shutdown(socket.SHUT_RDWR)
                 receiver_thread.join(timeout=2)
-            except OSError:
+            except:
                 pass
             s.conn.close()
             print_boxed("[INFO] Client shut down.", style="green")

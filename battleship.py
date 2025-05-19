@@ -438,7 +438,7 @@ def run_two_player_game_online(p1, p2, gamestate, notify_spectators, broadcast):
         if guess is None:
             send_package(attacker, MessageTypes.S_MESSAGE, "You lacked too hard. Putting you at the back of the queue...")
             send_package(defender, MessageTypes.S_MESSAGE, f"{attacker.username} timed out. You win!")
-            notify_spectators(defender_board, "timeout", False, attacker)
+            notify_spectators(None, "timeout", False, attacker)
             return "done", defender
 
         guess = guess.strip().upper()
