@@ -92,7 +92,10 @@ def client_handler(player: Player):
             if not package:
                 raise ConnectionError("Lost during login")
 
-            cmd, username = package.get("coord").split(maxsplit=1) # this breaks sometimes
+            try:
+                cmd, username = package.get("coord").split(maxsplit=1)
+            except ValueError:
+                raise ConnectionError
 
             if cmd == "REGISTER":
                 if username in all_player_logins:

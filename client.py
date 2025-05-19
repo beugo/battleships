@@ -69,6 +69,9 @@ def login(s) -> bool:
     while True:
         print_boxed("Username:", style="green")
         username = ask(">> ")
+        if len(username.split()) != 1 or username == "":
+            print_boxed("An existing username must contain exactly one word (no spaces).", style="red")
+            continue
         send_package(s, MessageTypes.COMMAND, f"LOGIN {username}")
         reply = receive_package(s)
         if not reply:
@@ -145,7 +148,7 @@ def main():
         try:
             # Auth
             print_boxed("Welcome to Battleships!", style="cyan")
-            
+
             is_new = None
             for _ in range(5):
                 print_boxed("Are you a new player? (y/n)", style="green")
