@@ -206,39 +206,6 @@ def start_match(p1: Player, p2: Player, current_state: GameState) -> str:
 
     return run_two_player_game_online(p1, p2, current_state, notify_spectators, broadcast)
 
-def ask_for_rematch(p1: Player, p2: Player,
-                    timeout: float = 15.0) -> tuple[str, str]:
-    """
-    Prompt both players for a rematch.
-    Uses the same COMMAND channel + latest_coord mechanism as gameplay.
-    Anything but YES counts as NO. 15 s overall timeout.
-    """
-    # 1) prompt
-    for p in (p1, p2):
-        try:
-            send_package(p, MessageTypes.PROMPT,
-                         "Play again? (yes/no)")
-        except ConnectionError:
-            pass
-
-    # 2) collect replies
-    replies = {}
-    for p in (p1, p2):
-        try:
-            ans = wait_for_message(p, timeout=timeout,
-                                   allowed=("YES", "NO"))
-        except ConnectionError:
-            ans = None
-        replies[p] = "YES" if ans == "YES" else "NO"
-
-        try:
-            send_package(p, MessageTypes.WAITING,
-                         "Waiting for your opponent…")
-        except ConnectionError:
-            pass
-
-    return replies[p1], replies[p2]
-
 def handle_connection_lost(p1, p2):
     """
     Probes both p1 and p2 to find who left (loser) and who stayed (winner).
@@ -403,7 +370,7 @@ def main():
                 current_state = GameState(p1, p2)
 
             # Play a match
-            result = start_match(p1, p2, current_state)
+            result, winner = start_match(p1, p2, current_state)
             conn_lost = (result == "connection_lost")
             conn_found = conn_lost and handle_connection_lost(p1, p2)
 
@@ -413,12 +380,15 @@ def main():
             if conn_lost:
                 continue
 
-            r1, r2 = ask_for_rematch(p1, p2)
+            # this logic will execute if the game successfully finishes
+            loser = p2 if winner is p1 else p1
             with t_lock:
-                if r1 != "YES" and p1 in player_queue:
-                    disconnect_player(p1)
-                if r2 != "YES" and p2 in player_queue:
-                    disconnect_player(p2)
+                for player in (p1, p2):
+                    if player in player_queue:
+                        player_queue.remove(player)
+
+                player_queue.insert(0, winner)
+                player_queue.append(loser)
 
             broadcast(msg="A new game will start soon!", msg_type=MessageTypes.WAITING)
             resend_queue_pos()

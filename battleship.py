@@ -473,7 +473,7 @@ def run_two_player_game_online(p1, p2, gamestate, notify_spectators, broadcast):
             if ships_sunk:
                 send_package(attacker, MessageTypes.RESULT, "Congratulations! You win.")
                 send_package(defender, MessageTypes.RESULT, "You lost.")
-                return "done"
+                return "done", attacker
 
             gamestate.current_player = defender.username
 

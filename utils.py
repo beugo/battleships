@@ -119,7 +119,7 @@ def detects_lost_connection(func):
         try:
             return func(*args, **kwargs)
         except (BrokenPipeError, ConnectionResetError, OSError) as e:
-            return "connection_lost"
+            return "connection_lost", None
     return wrapper
 
 # ─── Send and Receive Functions ────────────────────────────────────────────────
@@ -242,7 +242,7 @@ def wait_for_message(player,
     Block (with polling) until the player has typed something or the
     timeout elapses.
 
-    * `allowed` – optional tuple of accepted replies (case-insensitive).
+    * `allowed` - optional tuple of accepted replies (case-insensitive).
                   If given, the first match (UPPER-CASE) is returned;
                   anything else is treated as 'invalid' and we keep
                   waiting.  If the timer expires we return None.
@@ -272,7 +272,7 @@ def wait_for_message(player,
                 if cand in allowed:
                     player.my_turn = False
                     return cand           # validated prompt reply
-                # else: garbage – keep looping until timeout
+                # else: garbage - keep looping until timeout
 
         time.sleep(0.05)
 
