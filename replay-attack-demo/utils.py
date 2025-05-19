@@ -141,8 +141,8 @@ def send_package(s, type: MessageTypes, *args):
 
     # Encrypt
     plaintext = json.dumps({
-        "data" : json_dict,
-        "seq": s.seq
+        "data" : json_dict
+        # "seq": s.seq # MITM DEMO
     }).encode()
 
     ciphertext, nonce = aes_ctr_encrypt(plaintext)
@@ -159,7 +159,7 @@ def send_package(s, type: MessageTypes, *args):
     # Send
     try:
         s.conn.sendall(packed)
-        s.seq += 1
+        # s.seq += 1 # MITM DEMO
     except (BrokenPipeError, ConnectionResetError, OSError) as e:
         # wrap any socket failure as ConnectionError
         raise ConnectionError(f"send_package failed: {e}")
@@ -187,12 +187,13 @@ def receive_package(s) -> dict:
             payload = json.loads(plaintext.decode())
             
             data = payload['data']
-            seq_incoming = payload['seq']
 
-            # Seq check
-            if seq_incoming != s.seq:
-                raise ValueError(f"Bad seq: expected {s.seq} got {seq_incoming}")
-            s.seq += 1
+            # ---- MITM DEMO ----
+            # seq_incoming = payload['seq']
+
+            # if seq_incoming != s.seq:
+            #     raise ValueError(f"Bad seq: expected {s.seq} got {seq_incoming}")
+            # s.seq += 1
 
             return data
         

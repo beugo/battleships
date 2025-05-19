@@ -25,7 +25,7 @@ class Player:
         self.latest_coord = None
         self.msg_lock = threading.Lock()
         self.connected = True
-        self.seq = 0
+        # self.seq = 0 # MITM DEMO
 
 # ─── Game State Class ────────────────────────────────────────────────────────
 class GameState:
