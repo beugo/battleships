@@ -177,7 +177,7 @@ def client_handler(player: Player):
                              "Invalid move payload.")
 
     except ConnectionError:
-        print(f"[INFO] {player.addr} disconnected.")
+        print(f"[INFO] {player.username} disconnected.")
     finally:
         player.connected = False
         # Remove from queue if they’re still there
@@ -224,25 +224,27 @@ def handle_connection_lost(p1, p2):
         if loser in player_queue:
             player_queue.remove(loser)
 
-    for _ in range(0, 15):
-        with t_lock:
-            for index, player in enumerate(player_queue):
-                if player.username == loser.username:
-                    player_queue.pop(index)
-                    insert_at = 0 if loser is p1 else 1
-                    broadcast(
-                        msg=f"{player.username} has reconnected! Resuming game from when it left off...", 
-                        msg_type=MessageTypes.S_MESSAGE
-                    )
-                    player_queue.insert(insert_at, player)
-                    return True
+    for _ in range(15):
         time.sleep(1)
 
-    print(f"[INFO] Ending current game... {loser.username} failed to rejoin in time")
-    broadcast(
-        msg=f"{loser.username} has failed to reconnect in time, starting a new game...", 
-        msg_type=MessageTypes.S_MESSAGE
-    )
+        rejoined_player = None
+        insert_at = 0 if loser is p1 else 1     
+
+        with t_lock:
+            for idx, pl in enumerate(player_queue):
+                if pl.username == loser.username:
+                    rejoined_player = player_queue.pop(idx)
+                    player_queue.insert(insert_at, rejoined_player)
+                    break
+
+        if rejoined_player:
+            broadcast(msg=f"{rejoined_player.username} has reconnected! "
+                          "Resuming game from where it left off...",
+                      msg_type=MessageTypes.S_MESSAGE)
+            return True
+        
+    broadcast(msg=f"{loser.username} failed to reconnect in time – starting a new game…",
+              msg_type=MessageTypes.S_MESSAGE)
     return False
 
 def disconnect_player(player: Player, message: str = "You are being disconnected..."):
