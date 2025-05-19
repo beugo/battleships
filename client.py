@@ -33,7 +33,10 @@ def register(s) -> bool:
     """Client-side registration handshake. Returns True on success."""
     while True:
         print_boxed("Choose a username:", style="green")
-        username = ask(">> ")
+        username = ask(">> ").strip()
+        if len(username.split()) != 1 or username == "":
+            print_boxed("Please enter exactly one word as your username (no spaces).", style="red")
+            continue
         send_package(s, MessageTypes.COMMAND, f"REGISTER {username}")
         reply = receive_package(s)
         if not reply:
@@ -66,6 +69,9 @@ def login(s) -> bool:
     while True:
         print_boxed("Username:", style="green")
         username = ask(">> ")
+        if len(username.split()) != 1 or username == "":
+            print_boxed("An existing username must contain exactly one word (no spaces).", style="red")
+            continue
         send_package(s, MessageTypes.COMMAND, f"LOGIN {username}")
         reply = receive_package(s)
         if not reply:
@@ -120,10 +126,12 @@ def receiver(s):
                 break
             else:
                 print_boxed(package.get("msg"), style="cyan")
+        except (ConnectionError, OSError):
+            break
         except Exception as e:
             print_boxed(f"[ERROR] Receiver: {e}", style="red")
-            running = False
             break
+    running = False
 
 
 # ─── Main ─────────────────────────────────────────────────────────────────────
@@ -134,24 +142,33 @@ def main():
 
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(("127.0.0.1", src_port))
-        try:
-            s.connect((HOST, PORT))
-            s = Server(s, 0)
-        except:
-            print_boxed("Server is down, try again later...", style="red")
-            return
+        s.connect((HOST, PORT))
+        s = Server(s, 0)
         
         try:
             # Auth
             print_boxed("Welcome to Battleships!", style="cyan")
-            print_boxed("Are you a new player? (y/n)", style="green")
-            is_new = ask(">> ").lower().startswith("y")
+
+            is_new = None
+            for _ in range(5):
+                print_boxed("Are you a new player? (y/n)", style="green")
+                response = ask(">> ").lower()
+                if response not in ('y', 'n'):
+                    continue
+                is_new = True if response == 'y' else False
+                break
+
+            if is_new is None:
+                print_boxed("Did not answer question — exiting.", style="red")
+                return
+            
             if not (register(s) if is_new else login(s)):
                 print_boxed("Could not authenticate — exiting.", style="red")
                 return
 
             # Start receiver thread
-            threading.Thread(target=receiver, args=(s,), daemon=True).start()
+            receiver_thread = threading.Thread(target=receiver, args=(s,))
+            receiver_thread.start()
 
             # Chat / command loop
             while running:
@@ -168,6 +185,11 @@ def main():
                 pass
             running = False
         finally:
+            try:
+                s.conn.shutdown(socket.SHUT_RDWR)
+                receiver_thread.join(timeout=2)
+            except:
+                pass
             s.conn.close()
             print_boxed("[INFO] Client shut down.", style="green")
 

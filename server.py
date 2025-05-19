@@ -92,7 +92,10 @@ def client_handler(player: Player):
             if not package:
                 raise ConnectionError("Lost during login")
 
-            cmd, username = package.get("coord").split(maxsplit=1) # this breaks sometimes
+            try:
+                cmd, username = package.get("coord").split(maxsplit=1)
+            except ValueError:
+                raise ConnectionError
 
             if cmd == "REGISTER":
                 if username in all_player_logins:
@@ -127,8 +130,8 @@ def client_handler(player: Player):
                 send_package(player, MessageTypes.S_MESSAGE, "You must either login or register before joining")
 
         role_msg = (
-            "Success! Waiting for your opponent…" if len(player_queue) < 2
-            else f"You are number {len(player_queue)-1} in the queue - you'll see live updates."
+            "Waiting for your opponent…" if len(player_queue) < 2
+            else f"You are number {len(player_queue)-1} in the queue - you'll see live updates of the current game."
         )
         send_package(player, MessageTypes.WAITING, role_msg)
 
@@ -177,7 +180,7 @@ def client_handler(player: Player):
                              "Invalid move payload.")
 
     except ConnectionError:
-        print(f"[INFO] {player.addr} disconnected.")
+        print(f"[INFO] {player.username} disconnected.")
     finally:
         player.connected = False
         # Remove from queue if they’re still there
@@ -215,27 +218,36 @@ def handle_connection_lost(p1, p2):
     """
     winner, loser = determine_winner_and_loser(p1, p2)
 
-    send_package(
-        winner, 
-        MessageTypes.WAITING, 
-        "Your opponent has disconnected, please wait whilst we try to reconnect them."
+    broadcast(
+        msg=f"{loser.username} has disconnected, they have 15 seconds to reconnect...", 
+        msg_type=MessageTypes.WAITING
     )
 
     with t_lock:
         if loser in player_queue:
             player_queue.remove(loser)
 
-    for _ in range(0, 15):
-        with t_lock:
-            for index, player in enumerate(player_queue):
-                if player.username == loser.username:
-                    player_queue.pop(index)
-                    insert_at = 0 if loser is p1 else 1
-                    player_queue.insert(insert_at, player)
-                    return True
+    for _ in range(15):
         time.sleep(1)
 
-    print(f"[INFO] Ending current game... {player.username} failed to rejoin in time")
+        rejoined_player = None
+        insert_at = 0 if loser is p1 else 1     
+
+        with t_lock:
+            for idx, pl in enumerate(player_queue):
+                if pl.username == loser.username:
+                    rejoined_player = player_queue.pop(idx)
+                    player_queue.insert(insert_at, rejoined_player)
+                    break
+
+        if rejoined_player:
+            broadcast(msg=f"{rejoined_player.username} has reconnected! "
+                          "Resuming game from where it left off...",
+                      msg_type=MessageTypes.S_MESSAGE)
+            return True
+        
+    broadcast(msg=f"{loser.username} failed to reconnect in time – starting a new game…",
+              msg_type=MessageTypes.S_MESSAGE)
     return False
 
 def disconnect_player(player: Player, message: str = "You are being disconnected..."):
@@ -299,10 +311,12 @@ def notify_spectators(defender_board, result, ships_sunk, attacker):
             msg_type=MessageTypes.S_MESSAGE,
             spectators_only=True
         )
+        resend_queue_pos()
         return
 
     if result == "timeout":
-        text = f"{attacker.username} timed out; turn skipped."
+        text = f"{attacker.username} timed out. They lose!"
+        resend_queue_pos()
     else:
         verb = {"hit": "HIT", "miss": "MISSED", "already_shot": "ALREADY SHOT"}[result]
         text = f"{attacker.username} has {verb} the defender."
@@ -314,8 +328,6 @@ def notify_spectators(defender_board, result, ships_sunk, attacker):
               show_ships=False,
               spectators_only=True)
 
-    # finally refresh queue positions (spinner)
-    resend_queue_pos()
 
 def resend_queue_pos():
     with t_lock:
@@ -387,7 +399,7 @@ def main():
                 player_queue.insert(0, winner)
                 player_queue.append(loser)
 
-            broadcast(msg="A new game will start soon!", msg_type=MessageTypes.WAITING)
+            broadcast(msg=f"A new game will start shortly between {player_queue[0].username} and {player_queue[1].username}", msg_type=MessageTypes.WAITING)
             resend_queue_pos()
             time.sleep(3)
 

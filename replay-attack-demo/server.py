@@ -92,7 +92,9 @@ def client_handler(player: Player):
             if not package:
                 raise ConnectionError("Lost during login")
 
-            cmd, username = package.get("coord").split(maxsplit=1) # this breaks sometimes
+            cmd, username = package.get("coord").split()
+
+
 
             if cmd == "REGISTER":
                 if username in all_player_logins:
@@ -127,8 +129,8 @@ def client_handler(player: Player):
                 send_package(player, MessageTypes.S_MESSAGE, "You must either login or register before joining")
 
         role_msg = (
-            "Success! Waiting for your opponent…" if len(player_queue) < 2
-            else f"You are number {len(player_queue)-1} in the queue - you'll see live updates."
+            "Waiting for your opponent…" if len(player_queue) < 2
+            else f"You are number {len(player_queue)-1} in the queue - you'll see live updates of the current game."
         )
         send_package(player, MessageTypes.WAITING, role_msg)
 
@@ -302,7 +304,7 @@ def notify_spectators(defender_board, result, ships_sunk, attacker):
         return
 
     if result == "timeout":
-        text = f"{attacker.username} timed out; turn skipped."
+        text = f"{attacker.username} timed out. They lose!"
     else:
         verb = {"hit": "HIT", "miss": "MISSED", "already_shot": "ALREADY SHOT"}[result]
         text = f"{attacker.username} has {verb} the defender."
