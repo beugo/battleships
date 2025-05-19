@@ -221,24 +221,21 @@ def handle_connection_lost(p1, p2):
         "Your opponent has disconnected, please wait whilst we try to reconnect them."
     )
 
-    print(f"[INFO] Removing disconnected player {loser.username}")
-
     with t_lock:
         if loser in player_queue:
             player_queue.remove(loser)
 
-    for _ in range(0, 30):
+    for _ in range(0, 15):
         with t_lock:
-            for p in player_queue:
-                if p.username == loser.username:
-                    player_queue.remove(p)
-                    idx = 0 if p1.username == loser.username else 1
-                    player_queue.insert(idx, p)
-                    if current_state is not None:
-                        current_state.replace_addr(loser.addr, p.addr)
+            for index, player in enumerate(player_queue):
+                if player.username == loser.username:
+                    player_queue.pop(index)
+                    insert_at = 0 if loser is p1 else 1
+                    player_queue.insert(insert_at, player)
                     return True
         time.sleep(1)
 
+    print(f"[INFO] Ending current game... {player.username} failed to rejoin in time")
     return False
 
 def disconnect_player(player: Player, message: str = "You are being disconnected..."):
