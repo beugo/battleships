@@ -420,6 +420,7 @@ def run_two_player_game_online(p1, p2, gamestate, notify_spectators, broadcast):
                 show_ships=False,
                 spectators_only=True
             )
+            time.sleep(1)
 
     if gamestate.current_player is None:
         gamestate.current_player = p1.username

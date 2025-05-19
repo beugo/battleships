@@ -299,10 +299,12 @@ def notify_spectators(defender_board, result, ships_sunk, attacker):
             msg_type=MessageTypes.S_MESSAGE,
             spectators_only=True
         )
+        resend_queue_pos()
         return
 
     if result == "timeout":
-        text = f"{attacker.username} timed out; turn skipped."
+        text = f"{attacker.username} timed out. They lose!"
+        resend_queue_pos()
     else:
         verb = {"hit": "HIT", "miss": "MISSED", "already_shot": "ALREADY SHOT"}[result]
         text = f"{attacker.username} has {verb} the defender."
@@ -314,8 +316,6 @@ def notify_spectators(defender_board, result, ships_sunk, attacker):
               show_ships=False,
               spectators_only=True)
 
-    # finally refresh queue positions (spinner)
-    resend_queue_pos()
 
 def resend_queue_pos():
     with t_lock:
