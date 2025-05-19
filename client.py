@@ -33,7 +33,10 @@ def register(s) -> bool:
     """Client-side registration handshake. Returns True on success."""
     while True:
         print_boxed("Choose a username:", style="green")
-        username = ask(">> ")
+        username = ask(">> ").strip()
+        if len(username.split()) != 1 or username == "":
+            print_boxed("Please enter exactly one word as your username (no spaces).", style="red")
+            continue
         send_package(s, MessageTypes.COMMAND, f"REGISTER {username}")
         reply = receive_package(s)
         if not reply:
