@@ -145,8 +145,20 @@ def main():
         try:
             # Auth
             print_boxed("Welcome to Battleships!", style="cyan")
-            print_boxed("Are you a new player? (y/n)", style="green")
-            is_new = ask(">> ").lower().startswith("y")
+            
+            is_new = None
+            for _ in range(5):
+                print_boxed("Are you a new player? (y/n)", style="green")
+                response = ask(">> ").lower()
+                if response not in ('y', 'n'):
+                    continue
+                is_new = True if response == 'y' else False
+                break
+
+            if is_new is None:
+                print_boxed("Did not answer question — exiting.", style="red")
+                return
+            
             if not (register(s) if is_new else login(s)):
                 print_boxed("Could not authenticate — exiting.", style="red")
                 return
