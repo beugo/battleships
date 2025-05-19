@@ -215,10 +215,9 @@ def handle_connection_lost(p1, p2):
     """
     winner, loser = determine_winner_and_loser(p1, p2)
 
-    send_package(
-        winner, 
-        MessageTypes.WAITING, 
-        "Your opponent has disconnected, please wait whilst we try to reconnect them."
+    broadcast(
+        msg=f"{loser.username} has disconnected, they have 15 seconds to reconnect...", 
+        msg_type=MessageTypes.WAITING
     )
 
     with t_lock:
@@ -231,11 +230,19 @@ def handle_connection_lost(p1, p2):
                 if player.username == loser.username:
                     player_queue.pop(index)
                     insert_at = 0 if loser is p1 else 1
+                    broadcast(
+                        msg=f"{player.username} has reconnected! Resuming game from when it left off...", 
+                        msg_type=MessageTypes.S_MESSAGE
+                    )
                     player_queue.insert(insert_at, player)
                     return True
         time.sleep(1)
 
-    print(f"[INFO] Ending current game... {player.username} failed to rejoin in time")
+    print(f"[INFO] Ending current game... {loser.username} failed to rejoin in time")
+    broadcast(
+        msg=f"{loser.username} has failed to reconnect in time, starting a new game...", 
+        msg_type=MessageTypes.S_MESSAGE
+    )
     return False
 
 def disconnect_player(player: Player, message: str = "You are being disconnected..."):
@@ -387,7 +394,8 @@ def main():
                 player_queue.insert(0, winner)
                 player_queue.append(loser)
 
-            broadcast(msg="A new game will start soon!", msg_type=MessageTypes.WAITING)
+            with t_lock:
+                broadcast(msg=f"A new game will start shortly between {player_queue[0].username} and {player_queue[1].username}", msg_type=MessageTypes.WAITING)
             resend_queue_pos()
             time.sleep(3)
 

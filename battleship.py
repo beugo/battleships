@@ -420,7 +420,6 @@ def run_two_player_game_online(p1, p2, gamestate, notify_spectators, broadcast):
                 show_ships=False,
                 spectators_only=True
             )
-            time.sleep(1)
 
     if gamestate.current_player is None:
         gamestate.current_player = p1.username
@@ -473,7 +472,7 @@ def run_two_player_game_online(p1, p2, gamestate, notify_spectators, broadcast):
 
             if ships_sunk:
                 send_package(attacker, MessageTypes.RESULT, "Congratulations! You win.")
-                send_package(defender, MessageTypes.RESULT, "You lost.")
+                send_package(defender, MessageTypes.RESULT, "You lost. You are now being put at the back of the queue")
                 return "done", attacker
 
             gamestate.current_player = defender.username
