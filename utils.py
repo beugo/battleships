@@ -124,17 +124,10 @@ def detects_lost_connection(func):
 
 # ─── Send and Receive Functions ────────────────────────────────────────────────
 
-def send_package(s, type: MessageTypes, *args, seq=None):
+def send_package(s, type: MessageTypes, *args):
     """
-    For Clients:
-        Pass in the socket value for the server, alongside your current seq number.
-    For Servers:
-        Pass in only the Player object.
+    `s`: 'Player' or 'Server' object.
     """
-    server = hasattr(s, "conn") and hasattr(s, "seq")
-    sock = s.conn if server else s
-    sequence = s.seq if server else seq['seq']
-
     f = Frame()
     f.type = type.value
 
@@ -149,7 +142,7 @@ def send_package(s, type: MessageTypes, *args, seq=None):
     # Encrpyt
     plaintext = json.dumps({
         "data" : json_dict,
-        "seq": sequence
+        "seq": s.seq
     }).encode()
 
     ciphertext, nonce = aes_ctr_encrypt(plaintext)
@@ -165,32 +158,23 @@ def send_package(s, type: MessageTypes, *args, seq=None):
 
     # Send
     try:
-        sock.sendall(packed)
-        if server:
-            s.seq += 1
-        else:
-            seq["seq"] += 1
+        s.conn.sendall(packed)
+        s.seq += 1
     except (BrokenPipeError, ConnectionResetError, OSError) as e:
         # wrap any socket failure as ConnectionError
         raise ConnectionError(f"send_package failed: {e}")
     
-def receive_package(s, seq=None) -> dict:
+def receive_package(s) -> dict:
     """
-    For Clients:
-        Pass in the socket value for the server, alongside your current seq number.
-    For Servers:
-        Pass in only the Player object.
+    `s`: 'Player' or 'Server' object.
     """
-    server = hasattr(s, "conn") and hasattr(s, "seq")
-    sock = s.conn if server else s
-
     while True:
         f = Frame()
         try:
             # Receive and unpack
-            header = _recv_exact(sock, 16)
+            header = _recv_exact(s.conn, 16)
             f.unpack_header(header)
-            f.jsonmsg = _recv_exact(sock, f.length)
+            f.jsonmsg = _recv_exact(s.conn, f.length)
 
             # Checksum
             expected_checksum = f.checksum
@@ -206,14 +190,9 @@ def receive_package(s, seq=None) -> dict:
             seq_incoming = payload['seq']
 
             # Seq check
-            if server:
-                if seq_incoming != s.seq:
-                    raise ValueError(f"Bad seq: expected {s.seq} got {seq_incoming}")
-                s.seq += 1
-            else:
-                if seq_incoming != seq["seq"]:
-                    raise ValueError(f"Bad seq: expected {seq['seq']} got {seq_incoming}")
-                seq["seq"] += 1
+            if seq_incoming != s.seq:
+                raise ValueError(f"Bad seq: expected {s.seq} got {seq_incoming}")
+            s.seq += 1
 
             return data
         
