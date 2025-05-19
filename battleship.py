@@ -431,16 +431,15 @@ def run_two_player_game_online(p1, p2, gamestate, notify_spectators, broadcast):
         defender_board = gamestate.board_of(defender.username)
 
         send_package(attacker, MessageTypes.PROMPT, "Enter coordinate to fire at (e.g. B5) or 'Ctrl + C' to forfeit:")
-        send_package(defender, MessageTypes.WAITING, "Waiting for opponent to fire...")
+        send_package(defender, MessageTypes.WAITING, f"Waiting for {attacker.username} to fire...")
 
         guess = wait_for_message(attacker)
         
         if guess is None:
-            send_package(attacker, MessageTypes.S_MESSAGE, "You took too long. Skipping your turn.")
-            send_package(defender, MessageTypes.S_MESSAGE, "Opponent time out. It is now your turn.")
-            gamestate.current_player = p2.username if gamestate.current_player == p1.username else p1.username
+            send_package(attacker, MessageTypes.S_MESSAGE, "You lacked too hard. Putting you at the back of the queue...")
+            send_package(defender, MessageTypes.S_MESSAGE, f"{attacker.username} timed out. You win!")
             notify_spectators(defender_board, "timeout", False, attacker)
-            continue
+            return "done", defender
 
         guess = guess.strip().upper()
 
@@ -453,17 +452,18 @@ def run_two_player_game_online(p1, p2, gamestate, notify_spectators, broadcast):
             if result == "hit":
                 if sunk_name:
                     send_package(attacker, MessageTypes.S_MESSAGE, f"HIT! You blew up the {sunk_name}!")
-                    send_package(defender, MessageTypes.S_MESSAGE, f"HIT! The other player has blown up your {sunk_name}!")
+                    send_package(defender, MessageTypes.S_MESSAGE, f"HIT! {attacker.username} has blown up your {sunk_name}!")
                 else:
                     send_package(attacker, MessageTypes.S_MESSAGE, "HIT!")
                     send_package(defender, MessageTypes.S_MESSAGE, "You were HIT!")
 
             elif result == "miss":
                 send_package(attacker, MessageTypes.S_MESSAGE, "MISS!")
-                send_package(defender, MessageTypes.S_MESSAGE, "The attacker MISSED!")
+                send_package(defender, MessageTypes.S_MESSAGE, f"{attacker.username} MISSED!")
 
             elif result == "already_shot":
                 send_package(attacker, MessageTypes.S_MESSAGE, "Already fired there.")
+                send_package(defender, MessageTypes.S_MESSAGE, f"{attacker.username} repeated a shot.")
                 notify_spectators(defender_board, result, False, attacker)
                 continue
 
@@ -479,6 +479,7 @@ def run_two_player_game_online(p1, p2, gamestate, notify_spectators, broadcast):
 
         except ValueError as e:
             send_package(attacker, MessageTypes.S_MESSAGE, f"Invalid input: {e}")
+            send_package(defender, MessageTypes.S_MESSAGE, f"{attacker.username} has entered invalid input.")
             continue
         
 

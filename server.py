@@ -127,8 +127,8 @@ def client_handler(player: Player):
                 send_package(player, MessageTypes.S_MESSAGE, "You must either login or register before joining")
 
         role_msg = (
-            "Success! Waiting for your opponent…" if len(player_queue) < 2
-            else f"You are number {len(player_queue)-1} in the queue - you'll see live updates."
+            "Waiting for your opponent…" if len(player_queue) < 2
+            else f"You are number {len(player_queue)-1} in the queue - you'll see live updates of the current game."
         )
         send_package(player, MessageTypes.WAITING, role_msg)
 
