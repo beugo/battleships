@@ -128,7 +128,7 @@ def receiver(s):
         except Exception as e:
             print_boxed(f"[ERROR] Receiver: {e}", style="red")
             break
-        running = False
+    running = False
 
 
 # ─── Main ─────────────────────────────────────────────────────────────────────
@@ -172,9 +172,9 @@ def main():
         finally:
             try:
                 s.conn.shutdown(socket.SHUT_RDWR)
+                receiver_thread.join(timeout=2)
             except OSError:
                 pass
-            receiver_thread.join(timeout=2)
             s.conn.close()
             print_boxed("[INFO] Client shut down.", style="green")
 
