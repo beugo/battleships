@@ -123,10 +123,12 @@ def receiver(s):
                 break
             else:
                 print_boxed(package.get("msg"), style="cyan")
+        except (ConnectionError, OSError):
+            break
         except Exception as e:
             print_boxed(f"[ERROR] Receiver: {e}", style="red")
-            running = False
             break
+        running = False
 
 
 # ─── Main ─────────────────────────────────────────────────────────────────────
@@ -137,12 +139,8 @@ def main():
 
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(("127.0.0.1", src_port))
-        try:
-            s.connect((HOST, PORT))
-            s = Server(s, 0)
-        except:
-            print_boxed("Server is down, try again later...", style="red")
-            return
+        s.connect((HOST, PORT))
+        s = Server(s, 0)
         
         try:
             # Auth
@@ -154,7 +152,8 @@ def main():
                 return
 
             # Start receiver thread
-            threading.Thread(target=receiver, args=(s,), daemon=True).start()
+            receiver_thread = threading.Thread(target=receiver, args=(s,))
+            receiver_thread.start()
 
             # Chat / command loop
             while running:
@@ -171,6 +170,11 @@ def main():
                 pass
             running = False
         finally:
+            try:
+                s.conn.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+            receiver_thread.join(timeout=2)
             s.conn.close()
             print_boxed("[INFO] Client shut down.", style="green")
 
